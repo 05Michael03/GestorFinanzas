@@ -55,8 +55,53 @@ public class FinanzasManager {
 
     public boolean agregarMovimiento(double monto, int tipoId, int categoriaId, String descripcion) {
         validarSesion();
+
+        // Validaciones básicas
+        if (Double.isNaN(monto) || Double.isInfinite(monto)) {
+            throw new IllegalStateException("Monto inválido.");
+        }
+        if (monto <= 0.0) {
+            throw new IllegalStateException("El monto debe ser mayor que cero.");
+        }
+
+        String tipoNombre = dbHelper.obtenerNombreTipoPorId(tipoId);
+        if (tipoNombre == null || tipoNombre.trim().isEmpty()) {
+            throw new IllegalStateException("Tipo inválido. Seleccione un tipo válido.");
+        }
+
+        // Validar que la categoría exista para el tipo dado
+        boolean categoriaValida = false;
+        java.util.List<Categoria> categorias = dbHelper.obtenerCategoriasPorTipoId(tipoId);
+        if (categorias != null) {
+            for (Categoria c : categorias) {
+                if (c.getId() == categoriaId) { categoriaValida = true; break; }
+            }
+        }
+        if (!categoriaValida) {
+            throw new IllegalStateException("Categoría inválida. Seleccione una categoría válida.");
+        }
+
+        // Normalizar y validar descripción
+        if (descripcion == null) descripcion = "";
+        descripcion = descripcion.trim();
+        if (descripcion.length() > 1000) {
+            throw new IllegalStateException("La descripción es demasiado larga (máx 1000 caracteres).");
+        }
+
+        // Si es gasto, comprobar saldo disponible
+        if (tipoNombre.equalsIgnoreCase("gasto")) {
+            double saldo = dbHelper.obtenerSaldoTotal();
+            if (monto > saldo) {
+                throw new IllegalStateException(String.format("Saldo insuficiente. Saldo actual: $%.2f. No se puede registrar un gasto mayor al monto disponible.", saldo));
+            }
+        }
+
         Movimiento movimiento = new Movimiento(monto, tipoId, categoriaId, descripcion);
-        return dbHelper.agregarMovimiento(movimiento);
+        boolean guardado = dbHelper.agregarMovimiento(movimiento);
+        if (!guardado) {
+            throw new IllegalStateException("Ocurrió un error al guardar el movimiento. Intente nuevamente.");
+        }
+        return true;
     }
 
     public List<Movimiento> obtenerTodosMovimientos() {
