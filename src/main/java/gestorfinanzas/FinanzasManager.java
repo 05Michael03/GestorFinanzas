@@ -1,6 +1,7 @@
 package gestorfinanzas;
 
 import java.util.List;
+import java.time.LocalDate;
 
 public class FinanzasManager {
     private DatabaseHelper dbHelper;
@@ -54,6 +55,10 @@ public class FinanzasManager {
     }
 
     public boolean agregarMovimiento(double monto, int tipoId, int categoriaId, String descripcion) {
+        return agregarMovimiento(monto, tipoId, categoriaId, descripcion, LocalDate.now());
+    }
+
+    public boolean agregarMovimiento(double monto, int tipoId, int categoriaId, String descripcion, LocalDate fecha) {
         validarSesion();
 
         // Validaciones básicas
@@ -88,6 +93,12 @@ public class FinanzasManager {
             throw new IllegalStateException("La descripción es demasiado larga (máx 1000 caracteres).");
         }
 
+        // Validar fecha (no nula y no futura)
+        if (fecha == null) fecha = LocalDate.now();
+        if (fecha.isAfter(LocalDate.now())) {
+            throw new IllegalStateException("La fecha no puede ser posterior a la fecha actual.");
+        }
+
         // Si es gasto, comprobar saldo disponible
         if (tipoNombre.equalsIgnoreCase("gasto")) {
             double saldo = dbHelper.obtenerSaldoTotal();
@@ -97,6 +108,7 @@ public class FinanzasManager {
         }
 
         Movimiento movimiento = new Movimiento(monto, tipoId, categoriaId, descripcion);
+        movimiento.setFecha(fecha);
         boolean guardado = dbHelper.agregarMovimiento(movimiento);
         if (!guardado) {
             throw new IllegalStateException("Ocurrió un error al guardar el movimiento. Intente nuevamente.");

@@ -10,6 +10,8 @@ import org.jfree.chart.renderer.category.BarRenderer;
 import org.jfree.data.category.DefaultCategoryDataset;
 import java.awt.*;
 import java.util.List;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
@@ -20,6 +22,7 @@ public class MainFrame extends JFrame {
     private DefaultTableModel tableModel;
     private JTable movimientosTable;
     private JTextField montoField;
+    private JTextField fechaField;
     private JComboBox<Object> categoriaCombo;
     private JComboBox<Object> tipoCombo;
     private JTextArea descripcionArea;
@@ -27,7 +30,7 @@ public class MainFrame extends JFrame {
     // filtros
     private JComboBox<Object> tipoFilterCombo;
     private JComboBox<Object> categoriaFilterCombo;
-    private JTextField minMontoField, maxMontoField;
+    private JTextField fromDateField, toDateField;
     private JButton aplicarFiltroBtn, limpiarFiltroBtn, generarGraficoBtn;
     private java.util.List<Movimiento> movimientosCache = java.util.List.of();
     private boolean filtrosInicializados = false;
@@ -100,8 +103,10 @@ public class MainFrame extends JFrame {
         JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         tipoFilterCombo = new JComboBox<>();
         categoriaFilterCombo = new JComboBox<>();
-        minMontoField = new JTextField(8);
-        maxMontoField = new JTextField(8);
+        fromDateField = new JTextField(10);
+        fromDateField.setToolTipText("YYYY-MM-DD");
+        toDateField = new JTextField(10);
+        toDateField.setToolTipText("YYYY-MM-DD");
         aplicarFiltroBtn = new JButton("Aplicar filtro");
         limpiarFiltroBtn = new JButton("Limpiar filtro");
         generarGraficoBtn = new JButton("Generar gráfica");
@@ -110,10 +115,10 @@ public class MainFrame extends JFrame {
         filterPanel.add(tipoFilterCombo);
         filterPanel.add(new JLabel("Categoría:"));
         filterPanel.add(categoriaFilterCombo);
-        filterPanel.add(new JLabel("Monto min:"));
-        filterPanel.add(minMontoField);
-        filterPanel.add(new JLabel("Monto max:"));
-        filterPanel.add(maxMontoField);
+        filterPanel.add(new JLabel("Fecha desde:"));
+        filterPanel.add(fromDateField);
+        filterPanel.add(new JLabel("Fecha hasta:"));
+        filterPanel.add(toDateField);
         filterPanel.add(aplicarFiltroBtn);
         filterPanel.add(limpiarFiltroBtn);
         filterPanel.add(generarGraficoBtn);
@@ -182,7 +187,6 @@ public class MainFrame extends JFrame {
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.fill = GridBagConstraints.HORIZONTAL;
-
         gbc.gridx = 0; gbc.gridy = 0;
         form.add(new JLabel("Monto:"), gbc);
         gbc.gridx = 1;
@@ -190,13 +194,20 @@ public class MainFrame extends JFrame {
         form.add(montoField, gbc);
 
         gbc.gridx = 0; gbc.gridy = 1;
+        form.add(new JLabel("Fecha (YYYY-MM-DD):"), gbc);
+        gbc.gridx = 1;
+        fechaField = new JTextField();
+        fechaField.setToolTipText("Formato: YYYY-MM-DD. Dejar vacío = hoy");
+        form.add(fechaField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2;
         form.add(new JLabel("Tipo:"), gbc);
         gbc.gridx = 1;
         tipoCombo = new JComboBox<>();
         form.add(tipoCombo, gbc);
         tipoCombo.addActionListener(e -> actualizarCategoriasSegunTipo());
 
-        gbc.gridx = 0; gbc.gridy = 2;
+        gbc.gridx = 0; gbc.gridy = 3;
         form.add(new JLabel("Categoría:"), gbc);
         gbc.gridx = 1;
         JPanel categoriaPanel = new JPanel(new BorderLayout(4, 0));
@@ -208,13 +219,17 @@ public class MainFrame extends JFrame {
         categoriaPanel.add(addCategoriaBtn, BorderLayout.EAST);
         form.add(categoriaPanel, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 3;
+        gbc.gridx = 0; gbc.gridy = 4;
         form.add(new JLabel("Descripción:"), gbc);
         gbc.gridx = 1;
-        descripcionArea = new JTextArea(4, 15);
-        form.add(new JScrollPane(descripcionArea), gbc);
+        descripcionArea = new JTextArea(8, 25);
+        descripcionArea.setLineWrap(true);
+        descripcionArea.setWrapStyleWord(true);
+        JScrollPane descScroll = new JScrollPane(descripcionArea);
+        descScroll.setPreferredSize(new Dimension(260, 140));
+        form.add(descScroll, gbc);
 
-        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2;
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2;
         JPanel btns = new JPanel(new FlowLayout());
         JButton addBtn = new JButton("Agregar");
         addBtn.addActionListener(e -> agregarMovimiento());
@@ -299,6 +314,23 @@ public class MainFrame extends JFrame {
     private void agregarMovimiento() {
         try {
             double monto = Double.parseDouble(montoField.getText().trim());
+            // Fecha: si está vacío -> hoy; si no, parsear y validar que no sea futura
+            LocalDate fecha;
+            String fechaTxt = fechaField.getText().trim();
+            if (fechaTxt.isEmpty()) {
+                fecha = LocalDate.now();
+            } else {
+                try {
+                    fecha = LocalDate.parse(fechaTxt);
+                } catch (DateTimeParseException ex) {
+                    JOptionPane.showMessageDialog(this, "Formato de fecha inválido. Use YYYY-MM-DD.", "Error", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+                if (fecha.isAfter(LocalDate.now())) {
+                    JOptionPane.showMessageDialog(this, "La fecha no puede ser posterior a la fecha actual.", "Error", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
             Object tipoObj = tipoCombo.getSelectedItem();
             Object catObj = categoriaCombo.getSelectedItem();
             if (tipoObj == null) throw new IllegalStateException("Seleccione un tipo");
@@ -320,12 +352,13 @@ public class MainFrame extends JFrame {
 
             String descripcion = descripcionArea.getText().trim();
 
-            boolean ok = manager.agregarMovimiento(monto, tipoId, categoriaId, descripcion);
+            boolean ok = manager.agregarMovimiento(monto, tipoId, categoriaId, descripcion, fecha);
 
             if (!ok) {
                 JOptionPane.showMessageDialog(this, "No se pudo guardar el movimiento en la base de datos. Revisa la consola para detalles.", "Error", JOptionPane.ERROR_MESSAGE);
             } else {
                 montoField.setText("");
+                fechaField.setText("");
                 descripcionArea.setText("");
                 cargarDatos();
             }
@@ -354,8 +387,8 @@ public class MainFrame extends JFrame {
             limpiarFiltroBtn.addActionListener(e -> {
                 tipoFilterCombo.setSelectedIndex(0);
                 categoriaFilterCombo.removeAllItems();
-                minMontoField.setText("");
-                maxMontoField.setText("");
+                fromDateField.setText("");
+                toDateField.setText("");
                 cargarDatos();
             });
             generarGraficoBtn.addActionListener(e -> generarGrafico());
@@ -392,15 +425,28 @@ public class MainFrame extends JFrame {
         Integer catIdSel = null;
         if (catSel instanceof Categoria) catIdSel = ((Categoria) catSel).getId();
 
-        Double min = null, max = null;
-        try { if (!minMontoField.getText().trim().isEmpty()) min = Double.parseDouble(minMontoField.getText().trim()); } catch (NumberFormatException ignored) {}
-        try { if (!maxMontoField.getText().trim().isEmpty()) max = Double.parseDouble(maxMontoField.getText().trim()); } catch (NumberFormatException ignored) {}
+        // parsear fechas de filtro (si las hay)
+        LocalDate desde = null, hasta = null;
+        try {
+            String txtDesde = fromDateField.getText().trim();
+            String txtHasta = toDateField.getText().trim();
+            if (!txtDesde.isEmpty()) desde = LocalDate.parse(txtDesde);
+            if (!txtHasta.isEmpty()) hasta = LocalDate.parse(txtHasta);
+        } catch (DateTimeParseException ex) {
+            JOptionPane.showMessageDialog(this, "Formato de fecha inválido en filtros. Use YYYY-MM-DD.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (desde != null && hasta != null && desde.isAfter(hasta)) {
+            JOptionPane.showMessageDialog(this, "La fecha 'desde' no puede ser posterior a la fecha 'hasta'.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
 
         for (Movimiento m : todos) {
             if (tipoIdSel != null && tipoIdSel != m.getTipoId()) continue;
             if (catIdSel != null && catIdSel != m.getCategoriaId()) continue;
-            if (min != null && m.getMonto() < min) continue;
-            if (max != null && m.getMonto() > max) continue;
+            LocalDate f = m.getFecha();
+            if (desde != null && (f == null || f.isBefore(desde))) continue;
+            if (hasta != null && (f == null || f.isAfter(hasta))) continue;
             filtrados.add(m);
         }
 
