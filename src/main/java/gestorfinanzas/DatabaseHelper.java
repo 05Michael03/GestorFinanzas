@@ -119,14 +119,16 @@ public class DatabaseHelper {
         return false;
     }
 
-    public boolean registrarUsuario(String username, String password, String nombre, String email) {
-        String sql = "INSERT INTO usuarios (username, password, nombre, email) VALUES (?, ?, ?, ?)";
+    public boolean registrarUsuario(String username, String password, String nombre, String apellido, String cedula, String email) {
+        String sql = "INSERT INTO usuarios (username, password, nombre, apellido, cedula, email) VALUES (?, ?, ?, ?, ?, ?)";
 
         try (PreparedStatement pstmt = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setString(1, username);
             pstmt.setString(2, password);
             pstmt.setString(3, nombre);
-            pstmt.setString(4, email);
+            pstmt.setString(4, apellido);
+            pstmt.setString(5, cedula);
+            pstmt.setString(6, email);
             int affected = pstmt.executeUpdate();
             if (affected == 0) return false;
 
@@ -180,6 +182,16 @@ public class DatabaseHelper {
                 usuario.setId(rs.getInt("id"));
                 usuario.setUsername(rs.getString("username"));
                 usuario.setNombre(rs.getString("nombre"));
+                try {
+                    usuario.setApellido(rs.getString("apellido"));
+                } catch (Exception ex) {
+                    // columna 'apellido' puede no existir en DB antigua
+                }
+                try {
+                    usuario.setCedula(rs.getString("cedula"));
+                } catch (Exception ex) {
+                    // columna 'cedula' puede no existir en DB antigua
+                }
                 usuario.setEmail(rs.getString("email"));
                 usuario.setFechaRegistro(rs.getString("fecha_registro"));
                 return usuario;
