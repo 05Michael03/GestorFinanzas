@@ -20,8 +20,8 @@ public class FinanzasManager {
         return autenticado;
     }
 
-    public boolean registrarUsuario(String username, String password, String nombre, String email) {
-        boolean registrado = dbHelper.registrarUsuario(username, password, nombre, email);
+    public boolean registrarUsuario(String username, String password, String nombre, String apellido, String cedula, String email) {
+        boolean registrado = dbHelper.registrarUsuario(username, password, nombre, apellido, cedula, email);
         if (registrado) {
             return login(username, password);
         }

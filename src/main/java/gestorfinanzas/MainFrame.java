@@ -2,6 +2,7 @@ package gestorfinanzas;
 
 import javax.swing.*;
 import javax.swing.table.*;
+import javax.swing.text.*;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
@@ -104,9 +105,55 @@ public class MainFrame extends JFrame {
         tipoFilterCombo = new JComboBox<>();
         categoriaFilterCombo = new JComboBox<>();
         fromDateField = new JTextField(10);
-        fromDateField.setToolTipText("YYYY-MM-DD");
         toDateField = new JTextField(10);
+        final String FILTER_DATE_PLACEHOLDER = LocalDate.now().toString();
+        // setup placeholders for filter date fields
+        fromDateField.setText(FILTER_DATE_PLACEHOLDER);
+        fromDateField.setForeground(Color.GRAY);
+        fromDateField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusGained(java.awt.event.FocusEvent e) {
+                if (fromDateField.getText().equals(FILTER_DATE_PLACEHOLDER)) { fromDateField.setText(""); fromDateField.setForeground(Color.BLACK); }
+            }
+            public void focusLost(java.awt.event.FocusEvent e) {
+                if (fromDateField.getText().trim().isEmpty()) { fromDateField.setText(FILTER_DATE_PLACEHOLDER); fromDateField.setForeground(Color.GRAY); }
+            }
+        });
+        toDateField.setText(FILTER_DATE_PLACEHOLDER);
+        toDateField.setForeground(Color.GRAY);
+        toDateField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusGained(java.awt.event.FocusEvent e) {
+                if (toDateField.getText().equals(FILTER_DATE_PLACEHOLDER)) { toDateField.setText(""); toDateField.setForeground(Color.BLACK); }
+            }
+            public void focusLost(java.awt.event.FocusEvent e) {
+                if (toDateField.getText().trim().isEmpty()) { toDateField.setText(FILTER_DATE_PLACEHOLDER); toDateField.setForeground(Color.GRAY); }
+            }
+        });
+        fromDateField.setToolTipText("YYYY-MM-DD");
         toDateField.setToolTipText("YYYY-MM-DD");
+        // restrict filter date fields to digits and hyphen, max 10
+        DocumentFilter dateFilter = new DocumentFilter() {
+            private final int MAX = 10;
+            @Override
+            public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr) throws BadLocationException {
+                if (string == null) return;
+                String filtered = string.replaceAll("[^0-9-]", "");
+                int allowed = MAX - fb.getDocument().getLength();
+                if (filtered.length() > allowed) filtered = filtered.substring(0, Math.max(0, allowed));
+                if (!filtered.isEmpty()) super.insertString(fb, offset, filtered, attr);
+            }
+            @Override
+            public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs) throws BadLocationException {
+                if (text == null) return;
+                String filtered = text.replaceAll("[^0-9-]", "");
+                int currentLen = fb.getDocument().getLength();
+                int allowed = MAX - (currentLen - length);
+                if (filtered.length() > allowed) filtered = filtered.substring(0, Math.max(0, allowed));
+                if (!filtered.isEmpty()) super.replace(fb, offset, length, filtered, attrs);
+                else if (length > 0) super.remove(fb, offset, length);
+            }
+        };
+        ((AbstractDocument) fromDateField.getDocument()).setDocumentFilter(dateFilter);
+        ((AbstractDocument) toDateField.getDocument()).setDocumentFilter(dateFilter);
         aplicarFiltroBtn = new JButton("Aplicar filtro");
         limpiarFiltroBtn = new JButton("Limpiar filtro");
         generarGraficoBtn = new JButton("Generar gráfica");
@@ -194,10 +241,44 @@ public class MainFrame extends JFrame {
         form.add(montoField, gbc);
 
         gbc.gridx = 0; gbc.gridy = 1;
-        form.add(new JLabel("Fecha (YYYY-MM-DD):"), gbc);
+        form.add(new JLabel("Fecha:"), gbc);
         gbc.gridx = 1;
         fechaField = new JTextField();
+        final String DATE_PLACEHOLDER = LocalDate.now().toString();
         fechaField.setToolTipText("Formato: YYYY-MM-DD. Dejar vacío = hoy");
+        // placeholder behavior
+        fechaField.setText(DATE_PLACEHOLDER);
+        fechaField.setForeground(Color.GRAY);
+        fechaField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusGained(java.awt.event.FocusEvent e) {
+                if (fechaField.getText().equals(DATE_PLACEHOLDER)) { fechaField.setText(""); fechaField.setForeground(Color.BLACK); }
+            }
+            public void focusLost(java.awt.event.FocusEvent e) {
+                if (fechaField.getText().trim().isEmpty()) { fechaField.setText(DATE_PLACEHOLDER); fechaField.setForeground(Color.GRAY); }
+            }
+        });
+        // allow only digits and hyphen, max length 10 (YYYY-MM-DD)
+        ((AbstractDocument) fechaField.getDocument()).setDocumentFilter(new DocumentFilter() {
+            private final int MAX = 10;
+            @Override
+            public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr) throws BadLocationException {
+                if (string == null) return;
+                String filtered = string.replaceAll("[^0-9-]", "");
+                int allowed = MAX - fb.getDocument().getLength();
+                if (filtered.length() > allowed) filtered = filtered.substring(0, Math.max(0, allowed));
+                if (!filtered.isEmpty()) super.insertString(fb, offset, filtered, attr);
+            }
+            @Override
+            public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs) throws BadLocationException {
+                if (text == null) return;
+                String filtered = text.replaceAll("[^0-9-]", "");
+                int currentLen = fb.getDocument().getLength();
+                int allowed = MAX - (currentLen - length);
+                if (filtered.length() > allowed) filtered = filtered.substring(0, Math.max(0, allowed));
+                if (!filtered.isEmpty()) super.replace(fb, offset, length, filtered, attrs);
+                else if (length > 0) super.remove(fb, offset, length);
+            }
+        });
         form.add(fechaField, gbc);
 
         gbc.gridx = 0; gbc.gridy = 2;
@@ -317,6 +398,8 @@ public class MainFrame extends JFrame {
             // Fecha: si está vacío -> hoy; si no, parsear y validar que no sea futura
             LocalDate fecha;
             String fechaTxt = fechaField.getText().trim();
+            // If the placeholder remained (example date), treat as empty
+            if (fechaTxt.equals(LocalDate.now().toString())) fechaTxt = "";
             if (fechaTxt.isEmpty()) {
                 fecha = LocalDate.now();
             } else {
@@ -430,6 +513,9 @@ public class MainFrame extends JFrame {
         try {
             String txtDesde = fromDateField.getText().trim();
             String txtHasta = toDateField.getText().trim();
+            // Treat placeholders as empty
+            if (txtDesde.equals(LocalDate.now().toString())) txtDesde = "";
+            if (txtHasta.equals(LocalDate.now().toString())) txtHasta = "";
             if (!txtDesde.isEmpty()) desde = LocalDate.parse(txtDesde);
             if (!txtHasta.isEmpty()) hasta = LocalDate.parse(txtHasta);
         } catch (DateTimeParseException ex) {

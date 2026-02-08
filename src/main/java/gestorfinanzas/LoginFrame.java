@@ -2,6 +2,8 @@ package gestorfinanzas;
 
 import javax.swing.*;
 import java.awt.*;
+import javax.swing.text.*;
+import java.util.regex.Pattern;
 
 public class LoginFrame extends JFrame {
     private FinanzasManager manager;
@@ -44,7 +46,6 @@ public class LoginFrame extends JFrame {
         usernameField = new JTextField(20);
         usernameField.setPreferredSize(new Dimension(260, 28));
         usernameField.setMaximumSize(new Dimension(Short.MAX_VALUE, 28));
-        usernameField.setText("admin");
         formPanel.add(usernameField, gbc);
         gbc.weightx = 0.0;
 
@@ -56,7 +57,6 @@ public class LoginFrame extends JFrame {
         passwordField = new JPasswordField(20);
         passwordField.setPreferredSize(new Dimension(260, 28));
         passwordField.setMaximumSize(new Dimension(Short.MAX_VALUE, 28));
-        passwordField.setText("admin123");
         formPanel.add(passwordField, gbc);
         gbc.weightx = 0.0;
 
@@ -87,15 +87,10 @@ public class LoginFrame extends JFrame {
         gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2;
         formPanel.add(buttonsPanel, gbc);
 
-        // Info
-        JLabel infoLabel = new JLabel("Usuario demo: admin / admin123", SwingConstants.CENTER);
-        infoLabel.setForeground(Color.GRAY);
-        infoLabel.setFont(new Font("Arial", Font.ITALIC, 12));
 
         // Agregar componentes
         mainPanel.add(titleLabel, BorderLayout.NORTH);
         mainPanel.add(formPanel, BorderLayout.CENTER);
-        mainPanel.add(infoLabel, BorderLayout.SOUTH);
 
         // eventos
         usernameField.addActionListener(e -> iniciarSesion());
@@ -130,9 +125,10 @@ public class LoginFrame extends JFrame {
         }
     }
 
+    // Diagolo de registro de usuario
     private void mostrarRegistro() {
         JDialog dialog = new JDialog(this, "Registro de Usuario", true);
-        dialog.setSize(400, 350);
+        dialog.setSize(420, 480);
         dialog.setLocationRelativeTo(this);
 
         JPanel panel = new JPanel(new GridBagLayout());
@@ -146,7 +142,82 @@ public class LoginFrame extends JFrame {
         JPasswordField passField = new JPasswordField(15);
         JPasswordField confirmField = new JPasswordField(15);
         JTextField nameField = new JTextField(15);
+        JTextField apellidoField = new JTextField(15);
+
+        // Restringir nombre y apellido a letras y espacios
+        DocumentFilter nameFilter = new DocumentFilter() {
+            @Override
+            public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr) throws BadLocationException {
+                if (string == null) return;
+                String filtered = string.replaceAll("[^\\p{L} ]", "");
+                if (!filtered.isEmpty()) super.insertString(fb, offset, filtered, attr);
+            }
+            @Override
+            public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs) throws BadLocationException {
+                if (text == null) return;
+                String filtered = text.replaceAll("[^\\p{L} ]", "");
+                if (!filtered.isEmpty()) super.replace(fb, offset, length, filtered, attrs);
+                else if (length > 0) super.remove(fb, offset, length);
+            }
+            @Override
+            public void remove(FilterBypass fb, int offset, int length) throws BadLocationException {
+                super.remove(fb, offset, length);
+            }
+        };
+        ((AbstractDocument) nameField.getDocument()).setDocumentFilter(nameFilter);
+        ((AbstractDocument) apellidoField.getDocument()).setDocumentFilter(nameFilter);
+        JTextField cedulaField = new JTextField(15);
         JTextField emailField = new JTextField(15);
+        JComboBox<String> tipoCedulaCombo = new JComboBox<>(new String[]{"V", "E"});
+
+        // Placeholder example (eight 1s) for cedula
+        final String CEDULA_PLACEHOLDER = "11111111";
+        cedulaField.setText(CEDULA_PLACEHOLDER);
+        cedulaField.setForeground(Color.GRAY);
+        cedulaField.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusGained(java.awt.event.FocusEvent e) {
+                if (cedulaField.getText().equals(CEDULA_PLACEHOLDER)) {
+                    cedulaField.setText("");
+                    cedulaField.setForeground(Color.BLACK);
+                }
+            }
+            public void focusLost(java.awt.event.FocusEvent e) {
+                if (cedulaField.getText().trim().isEmpty()) {
+                    cedulaField.setText(CEDULA_PLACEHOLDER);
+                    cedulaField.setForeground(Color.GRAY);
+                }
+            }
+        });
+
+        // Restringir el campo cedula a solo dígitos y max 8 caracteres
+        ((AbstractDocument) cedulaField.getDocument()).setDocumentFilter(new DocumentFilter() {
+            private int MAX = 8;
+
+            @Override
+            public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr) throws BadLocationException {
+                if (string == null) return;
+                String filtered = string.replaceAll("\\D", "");
+                int allowed = MAX - fb.getDocument().getLength();
+                if (filtered.length() > allowed) filtered = filtered.substring(0, Math.max(0, allowed));
+                if (!filtered.isEmpty()) super.insertString(fb, offset, filtered, attr);
+            }
+
+            @Override
+            public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs) throws BadLocationException {
+                if (text == null) return;
+                String filtered = text.replaceAll("\\D", "");
+                int currentLen = fb.getDocument().getLength();
+                int allowed = MAX - (currentLen - length);
+                if (filtered.length() > allowed) filtered = filtered.substring(0, Math.max(0, allowed));
+                if (!filtered.isEmpty()) super.replace(fb, offset, length, filtered, attrs);
+                else if (length > 0) super.remove(fb, offset, length);
+            }
+
+            @Override
+            public void remove(FilterBypass fb, int offset, int length) throws BadLocationException {
+                super.remove(fb, offset, length);
+            }
+        });
 
         int row = 0;
         
@@ -169,7 +240,22 @@ public class LoginFrame extends JFrame {
         panel.add(new JLabel("Nombre:"), gbc);
         gbc.gridx = 1;
         panel.add(nameField, gbc);
-        
+
+        gbc.gridx = 0; gbc.gridy = ++row;
+        panel.add(new JLabel("Apellido:"), gbc);
+        gbc.gridx = 1;
+        panel.add(apellidoField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = ++row;
+        panel.add(new JLabel("Cédula:"), gbc);
+        gbc.gridx = 1;
+        // Panel para comboTipo + campo cedula
+        JPanel cedulaPanel = new JPanel(new BorderLayout(6, 0));
+        tipoCedulaCombo.setPreferredSize(new Dimension(60, cedulaField.getPreferredSize().height));
+        cedulaPanel.add(tipoCedulaCombo, BorderLayout.WEST);
+        cedulaPanel.add(cedulaField, BorderLayout.CENTER);
+        panel.add(cedulaPanel, gbc);
+
         gbc.gridx = 0; gbc.gridy = ++row;
         panel.add(new JLabel("Email:"), gbc);
         gbc.gridx = 1;
@@ -181,7 +267,7 @@ public class LoginFrame extends JFrame {
         JButton cancelarBtn = new JButton("Cancelar");
         
         registrarBtn.addActionListener(e -> {
-            if (registrarUsuario(userField, passField, confirmField, nameField, emailField)) {
+            if (registrarUsuario(userField, passField, confirmField, nameField, apellidoField, tipoCedulaCombo, cedulaField, emailField)) {
                 dialog.dispose();
             }
         });
@@ -200,18 +286,55 @@ public class LoginFrame extends JFrame {
 
     private boolean registrarUsuario(JTextField userField, JPasswordField passField,
                                     JPasswordField confirmField, JTextField nameField,
-                                    JTextField emailField) {
+                                    JTextField apellidoField, JComboBox<String> tipoCedulaCombo, JTextField cedulaField, JTextField emailField) {
         
         String username = userField.getText().trim();
         String password = new String(passField.getPassword());
         String confirm = new String(confirmField.getPassword());
         String nombre = nameField.getText().trim();
+        String apellido = apellidoField.getText().trim();
+        String cedula = cedulaField.getText().trim();
+        String tipoCedula = tipoCedulaCombo.getSelectedItem() != null ? tipoCedulaCombo.getSelectedItem().toString() : "V";
         String email = emailField.getText().trim();
 
         // Validaciones
         if (username.isEmpty() || password.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Usuario y contraseña son obligatorios", "Error", JOptionPane.ERROR_MESSAGE);
             return false;
+        }
+
+        if (apellido.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Apellido es obligatorio", "Error", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+
+        if (cedula.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Cédula es obligatoria", "Error", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+
+        // If placeholder is still present, treat as empty
+        if (cedula.equals("11111111")) {
+            JOptionPane.showMessageDialog(this, "Ingrese una cédula válida (ej: 11111111)", "Error", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+
+        // Validate numeric and length 8
+        String cedulaDigits = cedula.replaceAll("\\D", "");
+        if (cedulaDigits.length() != 8) {
+            JOptionPane.showMessageDialog(this, "La cédula debe tener exactamente 8 dígitos", "Error", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+
+        String formattedCedula = tipoCedula + "-" + cedulaDigits;
+
+        // Validar email si fue ingresado
+        if (!email.isEmpty()) {
+            Pattern emailPattern = Pattern.compile("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$");
+            if (!emailPattern.matcher(email).matches()) {
+                JOptionPane.showMessageDialog(this, "Ingrese un correo válido (ej: usuario@ejemplo.com)", "Error", JOptionPane.ERROR_MESSAGE);
+                return false;
+            }
         }
 
         if (!password.equals(confirm)) {
@@ -229,7 +352,7 @@ public class LoginFrame extends JFrame {
             return false;
         }
 
-        if (manager.registrarUsuario(username, password, nombre, email)) {
+        if (manager.registrarUsuario(username, password, nombre, apellido, formattedCedula, email)) {
             JOptionPane.showMessageDialog(this, 
                 "¡Registro exitoso!\nAhora puede iniciar sesión.",
                 "Éxito", 
