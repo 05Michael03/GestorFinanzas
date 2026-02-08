@@ -23,11 +23,28 @@ public class DatabaseHelper {
         }
 
         connect();
-
         File sqlFile = new File("finanzas.sql");
         if (sqlFile.exists()) {
-            importarSqlSiExiste(null);
+            // Only import if database appears empty (avoid overwriting existing data)
+            if (!databaseHasData()) {
+                importarSqlSiExiste(null);
+            } else {
+                System.out.println("finanzas.sql está presente pero la base de datos ya contiene datos; importación omitida para evitar sobrescribir.");
+            }
         }
+    }
+
+    private boolean databaseHasData() {
+        if (connection == null) return false;
+        try (Statement st = connection.createStatement()) {
+            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM usuarios")) {
+                if (rs.next()) return rs.getInt(1) > 0;
+            }
+        } catch (SQLException e) {
+            // tabla 'usuarios' no existe o error -> tratar como vacío
+            return false;
+        }
+        return false;
     }
 
     private void connect() {
@@ -186,6 +203,18 @@ public class DatabaseHelper {
         String sql = "INSERT INTO movimientos(usuario_id, monto, tipo_id, categoria_id, fecha, descripcion) VALUES(?,?,?,?,?,?)";
         boolean previousAutoCommit = true;
         try {
+            if (connection == null) {
+                System.err.println("No hay conexión a la base de datos. Verifique la configuración de DB_PATH o la URL de conexión.");
+                return false;
+            }
+            if (usuarioIdActual <= 0) {
+                System.err.println("Usuario actual inválido. Inicie sesión correctamente antes de agregar movimientos.");
+                return false;
+            }
+
+            // Asegurar que exista una fila de saldo para este usuario (defensive)
+            ensureSaldoExistsForUsuario();
+
             previousAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
             try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -218,6 +247,23 @@ public class DatabaseHelper {
             } catch (SQLException ex) {
                 System.err.println("Error restaurando autoCommit: " + ex.getMessage());
             }
+        }
+    }
+
+    private void ensureSaldoExistsForUsuario() {
+        if (connection == null || usuarioIdActual <= 0) return;
+        String check = "SELECT COUNT(*) FROM saldo WHERE usuario_id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(check)) {
+            pstmt.setInt(1, usuarioIdActual);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next() && rs.getInt(1) == 0) {
+                try (PreparedStatement ins = connection.prepareStatement("INSERT INTO saldo (usuario_id, saldo_total) VALUES (?, 0)")) {
+                    ins.setInt(1, usuarioIdActual);
+                    ins.executeUpdate();
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error al asegurar fila de saldo: " + e.getMessage());
         }
     }
 
@@ -312,15 +358,30 @@ public class DatabaseHelper {
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setDouble(1, monto);
             pstmt.setInt(2, usuarioIdActual);
-            pstmt.executeUpdate();
+            int rows = pstmt.executeUpdate();
+            if (rows == 0) {
+                // si no existe la fila, insertar una (defensive)
+                try (PreparedStatement ins = connection.prepareStatement("INSERT INTO saldo (usuario_id, saldo_total, fecha_actualizacion) VALUES (?, ?, CURRENT_TIMESTAMP)")) {
+                    ins.setInt(1, usuarioIdActual);
+                    double initial = signo.equals("+") ? monto : -monto;
+                    ins.setDouble(2, initial);
+                    ins.executeUpdate();
+                }
+            }
         } catch (SQLException e) {
             System.err.println("Error al actualizar saldo: " + e.getMessage());
         }
     }
 
     public double obtenerSaldoTotal() {
+        if (connection == null) {
+            System.err.println("No hay conexión a la base de datos. Imposible obtener saldo.");
+            return 0.0;
+        }
+        if (usuarioIdActual <= 0) return 0.0;
+
         String sql = "SELECT saldo_total FROM saldo WHERE usuario_id = ?";
-        
+
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setInt(1, usuarioIdActual);
             ResultSet rs = pstmt.executeQuery();

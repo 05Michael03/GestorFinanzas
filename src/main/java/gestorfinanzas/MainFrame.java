@@ -1,9 +1,17 @@
 package gestorfinanzas;
 
 import javax.swing.*;
-import javax.swing.table.DefaultTableModel;
+import javax.swing.table.*;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.CategoryPlot;
+import org.jfree.chart.renderer.category.BarRenderer;
+import org.jfree.data.category.DefaultCategoryDataset;
 import java.awt.*;
 import java.util.List;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 
 public class MainFrame extends JFrame {
     private FinanzasManager manager;
@@ -16,6 +24,13 @@ public class MainFrame extends JFrame {
     private JComboBox<Object> tipoCombo;
     private JTextArea descripcionArea;
     private JLabel totalIngresosLabel, totalGastosLabel;
+    // filtros
+    private JComboBox<Object> tipoFilterCombo;
+    private JComboBox<Object> categoriaFilterCombo;
+    private JTextField minMontoField, maxMontoField;
+    private JButton aplicarFiltroBtn, limpiarFiltroBtn, generarGraficoBtn;
+    private java.util.List<Movimiento> movimientosCache = java.util.List.of();
+    private boolean filtrosInicializados = false;
 
     public MainFrame(FinanzasManager manager) {
         // Intentar aplicar Nimbus antes de inicializar componentes, con fallback al LAF del sistema
@@ -36,6 +51,17 @@ public class MainFrame extends JFrame {
 
         this.manager = manager;
         initComponents();
+        // Ensure DB connection is closed when window is closed
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                try {
+                    manager.cerrarConexion();
+                } catch (Exception ex) {
+                    // ignore
+                }
+            }
+        });
         cargarDatos();
         setVisible(true);
     }
@@ -70,6 +96,33 @@ public class MainFrame extends JFrame {
         topPanel.add(userPanel, BorderLayout.WEST);
         topPanel.add(saldoPanel, BorderLayout.EAST);
 
+        // --- Panel de filtros (aparece bajo el topPanel)
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        tipoFilterCombo = new JComboBox<>();
+        categoriaFilterCombo = new JComboBox<>();
+        minMontoField = new JTextField(8);
+        maxMontoField = new JTextField(8);
+        aplicarFiltroBtn = new JButton("Aplicar filtro");
+        limpiarFiltroBtn = new JButton("Limpiar filtro");
+        generarGraficoBtn = new JButton("Generar gráfica");
+
+        filterPanel.add(new JLabel("Tipo:"));
+        filterPanel.add(tipoFilterCombo);
+        filterPanel.add(new JLabel("Categoría:"));
+        filterPanel.add(categoriaFilterCombo);
+        filterPanel.add(new JLabel("Monto min:"));
+        filterPanel.add(minMontoField);
+        filterPanel.add(new JLabel("Monto max:"));
+        filterPanel.add(maxMontoField);
+        filterPanel.add(aplicarFiltroBtn);
+        filterPanel.add(limpiarFiltroBtn);
+        filterPanel.add(generarGraficoBtn);
+
+        // Container to stack topPanel + filters
+        JPanel northContainer = new JPanel(new BorderLayout());
+        northContainer.add(topPanel, BorderLayout.NORTH);
+        northContainer.add(filterPanel, BorderLayout.SOUTH);
+
         // Center - tabla
         String[] columnas = {"ID", "Fecha", "Tipo", "Categoría", "Monto", "Descripción"};
         tableModel = new DefaultTableModel(columnas, 0) {
@@ -86,6 +139,39 @@ public class MainFrame extends JFrame {
             }
         } catch (Exception ignore) {
         }
+
+        // Renderer para colorear montos: ingresos en verde, gastos en rojo
+        try {
+            TableColumn montoCol = null;
+            for (int i = 0; i < movimientosTable.getColumnModel().getColumnCount(); i++) {
+                TableColumn c = movimientosTable.getColumnModel().getColumn(i);
+                if ("Monto".equals(c.getHeaderValue())) { montoCol = c; break; }
+            }
+            if (montoCol != null) {
+                montoCol.setCellRenderer(new DefaultTableCellRenderer() {
+                    @Override
+                    public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                        Component comp = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                        int modelRow = table.convertRowIndexToModel(row);
+                        Object tipoVal = table.getModel().getValueAt(modelRow, 2); // columna 'Tipo' en el modelo
+                        String tipo = tipoVal != null ? tipoVal.toString() : "";
+                        if (tipo.equalsIgnoreCase("ingreso")) {
+                            comp.setForeground(new Color(0, 128, 0));
+                        } else {
+                            comp.setForeground(Color.RED);
+                        }
+                        if (value instanceof Number) {
+                            setHorizontalAlignment(SwingConstants.RIGHT);
+                            setText(String.format("$%.2f", ((Number) value).doubleValue()));
+                        } else if (value != null) {
+                            setHorizontalAlignment(SwingConstants.RIGHT);
+                            setText(value.toString());
+                        }
+                        return comp;
+                    }
+                });
+            }
+        } catch (Exception ignore) {}
 
         // Right - formulario
         JPanel rightPanel = new JPanel(new BorderLayout(10, 10));
@@ -148,7 +234,14 @@ public class MainFrame extends JFrame {
         statsPanel.add(totalGastosLabel);
         rightPanel.add(statsPanel, BorderLayout.CENTER);
 
-        mainPanel.add(topPanel, BorderLayout.NORTH);
+        // Botón adicional de gráfica en panel derecho (asegura visibilidad)
+        JButton chartBtnRight = new JButton("Generar gráfica");
+        chartBtnRight.addActionListener(e -> generarGrafico());
+        JPanel chartBtnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        chartBtnPanel.add(chartBtnRight);
+        rightPanel.add(chartBtnPanel, BorderLayout.SOUTH);
+
+        mainPanel.add(northContainer, BorderLayout.NORTH);
         mainPanel.add(tableScroll, BorderLayout.CENTER);
         mainPanel.add(rightPanel, BorderLayout.EAST);
 
@@ -171,6 +264,8 @@ public class MainFrame extends JFrame {
         // Movimientos
         tableModel.setRowCount(0);
         List<Movimiento> movimientos = manager.obtenerTodosMovimientos();
+        // cache para filtros
+        movimientosCache = movimientos != null ? movimientos : java.util.List.of();
         for (Movimiento m : movimientos) {
             String tipoNombre = m.getTipoNombre() != null ? m.getTipoNombre() : "";
             String categoriaNombre = m.getCategoriaNombre() != null ? m.getCategoriaNombre() : "";
@@ -193,7 +288,12 @@ public class MainFrame extends JFrame {
         if (totalIngresosLabel != null && totalGastosLabel != null) {
             totalIngresosLabel.setText(String.format("Total Ingresos: $%.2f", totalIngresos));
             totalGastosLabel.setText(String.format("Total Gastos: $%.2f", totalGastos));
+            totalIngresosLabel.setForeground(new Color(0, 128, 0));
+            totalGastosLabel.setForeground(Color.RED);
         }
+
+        // Inicializar/actualizar filtros (no volverá a anexar listeners si ya están)
+        inicializarFiltros();
     }
 
     private void agregarMovimiento() {
@@ -229,11 +329,162 @@ public class MainFrame extends JFrame {
                 descripcionArea.setText("");
                 cargarDatos();
             }
+
         } catch (NumberFormatException ex) {
             JOptionPane.showMessageDialog(this, "Monto inválido", "Error", JOptionPane.ERROR_MESSAGE);
         } catch (IllegalStateException ex) {
             JOptionPane.showMessageDialog(this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void inicializarFiltros() {
+        // siempre refrescar items (por si se añaden tipos/categorías)
+        tipoFilterCombo.removeAllItems();
+        java.util.List<Tipo> tipos = manager.obtenerTipos();
+        tipoFilterCombo.addItem("-- Todos --");
+        if (tipos != null) for (Tipo t : tipos) tipoFilterCombo.addItem(t);
+
+        // actualizar categorías según la selección actual
+        actualizarCategoriasFiltroSegunTipo();
+
+        // agregar listeners solo la primera vez para evitar duplicados
+        if (!filtrosInicializados) {
+            tipoFilterCombo.addActionListener(e -> actualizarCategoriasFiltroSegunTipo());
+            aplicarFiltroBtn.addActionListener(e -> aplicarFiltro());
+            limpiarFiltroBtn.addActionListener(e -> {
+                tipoFilterCombo.setSelectedIndex(0);
+                categoriaFilterCombo.removeAllItems();
+                minMontoField.setText("");
+                maxMontoField.setText("");
+                cargarDatos();
+            });
+            generarGraficoBtn.addActionListener(e -> generarGrafico());
+            filtrosInicializados = true;
+        }
+    }
+
+    private void actualizarCategoriasFiltroSegunTipo() {
+        categoriaFilterCombo.removeAllItems();
+        Object sel = tipoFilterCombo.getSelectedItem();
+        if (sel instanceof Tipo) {
+            int tipoId = ((Tipo) sel).getId();
+            java.util.List<Categoria> cats = manager.obtenerCategoriasPorTipoId(tipoId);
+            if (cats == null || cats.isEmpty()) {
+                categoriaFilterCombo.addItem("-- Todas --");
+            } else {
+                categoriaFilterCombo.addItem("-- Todas --");
+                for (Categoria c : cats) categoriaFilterCombo.addItem(c);
+            }
+        } else {
+            categoriaFilterCombo.addItem("-- Todas --");
+        }
+    }
+
+    private void aplicarFiltro() {
+        java.util.List<Movimiento> todos = movimientosCache;
+        java.util.List<Movimiento> filtrados = new java.util.ArrayList<>();
+
+        Object tipoSel = tipoFilterCombo.getSelectedItem();
+        Integer tipoIdSel = null;
+        if (tipoSel instanceof Tipo) tipoIdSel = ((Tipo) tipoSel).getId();
+
+        Object catSel = categoriaFilterCombo.getSelectedItem();
+        Integer catIdSel = null;
+        if (catSel instanceof Categoria) catIdSel = ((Categoria) catSel).getId();
+
+        Double min = null, max = null;
+        try { if (!minMontoField.getText().trim().isEmpty()) min = Double.parseDouble(minMontoField.getText().trim()); } catch (NumberFormatException ignored) {}
+        try { if (!maxMontoField.getText().trim().isEmpty()) max = Double.parseDouble(maxMontoField.getText().trim()); } catch (NumberFormatException ignored) {}
+
+        for (Movimiento m : todos) {
+            if (tipoIdSel != null && tipoIdSel != m.getTipoId()) continue;
+            if (catIdSel != null && catIdSel != m.getCategoriaId()) continue;
+            if (min != null && m.getMonto() < min) continue;
+            if (max != null && m.getMonto() > max) continue;
+            filtrados.add(m);
+        }
+
+        // actualizar tabla con filtrados
+        tableModel.setRowCount(0);
+        for (Movimiento m : filtrados) {
+            String tipoNombre = m.getTipoNombre() != null ? m.getTipoNombre() : "";
+            String categoriaNombre = m.getCategoriaNombre() != null ? m.getCategoriaNombre() : "";
+            tableModel.addRow(new Object[]{m.getId(), m.getFecha(), tipoNombre, categoriaNombre, m.getMonto(), m.getDescripcion()});
+        }
+
+        // recalcular estadísticas filtradas
+        double totalIngresos = 0, totalGastos = 0;
+        for (Movimiento m : filtrados) {
+            String tipoNombre = m.getTipoNombre();
+            if (tipoNombre != null && tipoNombre.equalsIgnoreCase("ingreso")) totalIngresos += m.getMonto(); else totalGastos += m.getMonto();
+        }
+        totalIngresosLabel.setText(String.format("Total Ingresos: $%.2f", totalIngresos));
+        totalGastosLabel.setText(String.format("Total Gastos: $%.2f", totalGastos));
+        totalIngresosLabel.setForeground(new Color(0, 128, 0));
+        totalGastosLabel.setForeground(Color.RED);
+    }
+
+    private void generarGrafico() {
+        // Use currently displayed rows as filtered dataset and create two separate charts
+        java.util.Map<String, Double> ingresosPorCategoria = new java.util.HashMap<>();
+        java.util.Map<String, Double> gastosPorCategoria = new java.util.HashMap<>();
+
+        for (int r = 0; r < tableModel.getRowCount(); r++) {
+            String tipo = (tableModel.getValueAt(r, 2) != null) ? tableModel.getValueAt(r, 2).toString() : "";
+            String categoria = (tableModel.getValueAt(r, 3) != null) ? tableModel.getValueAt(r, 3).toString() : "Sin categoría";
+            double monto = 0.0;
+            Object montoObj = tableModel.getValueAt(r, 4);
+            if (montoObj instanceof Number) monto = ((Number) montoObj).doubleValue(); else { try { monto = Double.parseDouble(montoObj.toString()); } catch (Exception ignored) {} }
+
+            if (tipo.equalsIgnoreCase("ingreso")) {
+                ingresosPorCategoria.put(categoria, ingresosPorCategoria.getOrDefault(categoria, 0.0) + monto);
+            } else {
+                gastosPorCategoria.put(categoria, gastosPorCategoria.getOrDefault(categoria, 0.0) + monto);
+            }
+        }
+
+        if (ingresosPorCategoria.isEmpty() && gastosPorCategoria.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "No hay datos para graficar.", "Información", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        DefaultCategoryDataset ingresosDataset = new DefaultCategoryDataset();
+        for (java.util.Map.Entry<String, Double> e : ingresosPorCategoria.entrySet()) {
+            ingresosDataset.addValue(e.getValue(), "Ingresos", e.getKey());
+        }
+
+        DefaultCategoryDataset gastosDataset = new DefaultCategoryDataset();
+        for (java.util.Map.Entry<String, Double> e : gastosPorCategoria.entrySet()) {
+            gastosDataset.addValue(e.getValue(), "Gastos", e.getKey());
+        }
+
+        JFreeChart ingresosChart = ChartFactory.createBarChart("Ingresos por Categoría", "Categoría", "Monto", ingresosDataset);
+        JFreeChart gastosChart = ChartFactory.createBarChart("Gastos por Categoría", "Categoría", "Monto", gastosDataset);
+
+        // Aplicar colores consistentes: ingresos = verde, gastos = rojo
+        try {
+            CategoryPlot p1 = ingresosChart.getCategoryPlot();
+            BarRenderer r1 = (BarRenderer) p1.getRenderer();
+            r1.setSeriesPaint(0, new Color(0, 128, 0));
+        } catch (Exception ignore) {}
+        try {
+            CategoryPlot p2 = gastosChart.getCategoryPlot();
+            BarRenderer r2 = (BarRenderer) p2.getRenderer();
+            r2.setSeriesPaint(0, Color.RED);
+        } catch (Exception ignore) {}
+
+        ChartPanel cp1 = new ChartPanel(ingresosChart);
+        ChartPanel cp2 = new ChartPanel(gastosChart);
+
+        JPanel content = new JPanel(new GridLayout(1, 2));
+        content.add(cp1);
+        content.add(cp2);
+
+        JDialog dlg = new JDialog(this, "Gráficas: Ingresos y Gastos", true);
+        dlg.setSize(1100, 600);
+        dlg.setLocationRelativeTo(this);
+        dlg.setContentPane(content);
+        dlg.setVisible(true);
     }
 
     private void actualizarCategoriasSegunTipo() {
