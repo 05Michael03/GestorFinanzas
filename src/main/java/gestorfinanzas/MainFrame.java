@@ -13,8 +13,10 @@ import java.awt.*;
 import java.util.List;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.time.format.DateTimeFormatter;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.awt.event.*;
 
 public class MainFrame extends JFrame {
     private FinanzasManager manager;
@@ -32,9 +34,10 @@ public class MainFrame extends JFrame {
     private JComboBox<Object> tipoFilterCombo;
     private JComboBox<Object> categoriaFilterCombo;
     private JTextField fromDateField, toDateField;
-    private JButton aplicarFiltroBtn, limpiarFiltroBtn, generarGraficoBtn;
+    private JButton aplicarFiltroBtn, limpiarFiltroBtn, generarGraficoBtn, generarReporteBtn;
     private java.util.List<Movimiento> movimientosCache = java.util.List.of();
     private boolean filtrosInicializados = false;
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
 
     public MainFrame(FinanzasManager manager) {
         // Intentar aplicar Nimbus antes de inicializar componentes, con fallback al LAF del sistema
@@ -106,7 +109,7 @@ public class MainFrame extends JFrame {
         categoriaFilterCombo = new JComboBox<>();
         fromDateField = new JTextField(10);
         toDateField = new JTextField(10);
-        final String FILTER_DATE_PLACEHOLDER = LocalDate.now().toString();
+        final String FILTER_DATE_PLACEHOLDER = LocalDate.now().format(DATE_FORMAT);
         // setup placeholders for filter date fields
         fromDateField.setText(FILTER_DATE_PLACEHOLDER);
         fromDateField.setForeground(Color.GRAY);
@@ -128,8 +131,8 @@ public class MainFrame extends JFrame {
                 if (toDateField.getText().trim().isEmpty()) { toDateField.setText(FILTER_DATE_PLACEHOLDER); toDateField.setForeground(Color.GRAY); }
             }
         });
-        fromDateField.setToolTipText("YYYY-MM-DD");
-        toDateField.setToolTipText("YYYY-MM-DD");
+        fromDateField.setToolTipText("DD-MM-YYYY");
+        toDateField.setToolTipText("DD-MM-YYYY");
         // restrict filter date fields to digits and hyphen, max 10
         DocumentFilter dateFilter = new DocumentFilter() {
             private final int MAX = 10;
@@ -157,6 +160,7 @@ public class MainFrame extends JFrame {
         aplicarFiltroBtn = new JButton("Aplicar filtro");
         limpiarFiltroBtn = new JButton("Limpiar filtro");
         generarGraficoBtn = new JButton("Generar gráfica");
+        generarReporteBtn = new JButton("Generar reporte");
 
         filterPanel.add(new JLabel("Tipo:"));
         filterPanel.add(tipoFilterCombo);
@@ -169,6 +173,7 @@ public class MainFrame extends JFrame {
         filterPanel.add(aplicarFiltroBtn);
         filterPanel.add(limpiarFiltroBtn);
         filterPanel.add(generarGraficoBtn);
+        filterPanel.add(generarReporteBtn);
 
         // Container to stack topPanel + filters
         JPanel northContainer = new JPanel(new BorderLayout());
@@ -225,6 +230,143 @@ public class MainFrame extends JFrame {
             }
         } catch (Exception ignore) {}
 
+        // Doble clic: editar todo el movimiento
+        movimientosTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() != 2) return;
+                int viewRow = movimientosTable.rowAtPoint(e.getPoint());
+                if (viewRow == -1) return;
+                int modelRow = movimientosTable.convertRowIndexToModel(viewRow);
+                Object idObj = tableModel.getValueAt(modelRow, 0);
+                final int id = (idObj instanceof Integer) ? (Integer) idObj : -1;
+                if (id == -1) return;
+
+                Object fechaObj = tableModel.getValueAt(modelRow, 1);
+                String fechaStr = fechaObj != null ? fechaObj.toString() : LocalDate.now().format(DATE_FORMAT);
+                String tipoNombre = tableModel.getValueAt(modelRow, 2) != null ? tableModel.getValueAt(modelRow, 2).toString() : "";
+                String categoriaNombre = tableModel.getValueAt(modelRow, 3) != null ? tableModel.getValueAt(modelRow, 3).toString() : "";
+                Object montoObj = tableModel.getValueAt(modelRow, 4);
+                String montoStr = montoObj != null ? montoObj.toString() : "0";
+                String descripcion = tableModel.getValueAt(modelRow, 5) != null ? tableModel.getValueAt(modelRow, 5).toString() : "";
+
+                JDialog dlg = new JDialog(MainFrame.this, "Editar Movimiento", true);
+                JPanel p = new JPanel(new GridBagLayout());
+                GridBagConstraints gbc = new GridBagConstraints();
+                gbc.insets = new Insets(6,6,6,6);
+                gbc.fill = GridBagConstraints.HORIZONTAL;
+
+                gbc.gridx = 0; gbc.gridy = 0;
+                p.add(new JLabel("Monto:"), gbc);
+                gbc.gridx = 1;
+                JTextField montoFld = new JTextField(montoStr);
+                p.add(montoFld, gbc);
+
+                gbc.gridx = 0; gbc.gridy = 1;
+                p.add(new JLabel("Fecha (DD-MM-YYYY):"), gbc);
+                gbc.gridx = 1;
+                JTextField fechaFld = new JTextField(fechaStr);
+                p.add(fechaFld, gbc);
+
+                gbc.gridx = 0; gbc.gridy = 2;
+                p.add(new JLabel("Tipo:"), gbc);
+                gbc.gridx = 1;
+                JComboBox<Tipo> tiposBox = new JComboBox<>();
+                java.util.List<Tipo> tipos = manager.obtenerTipos();
+                if (tipos != null) for (Tipo t : tipos) tiposBox.addItem(t);
+                for (int i=0;i<tiposBox.getItemCount();i++) {
+                    Tipo t = tiposBox.getItemAt(i);
+                    if (t != null && t.toString().equalsIgnoreCase(tipoNombre)) { tiposBox.setSelectedIndex(i); break; }
+                }
+                p.add(tiposBox, gbc);
+
+                gbc.gridx = 0; gbc.gridy = 3;
+                p.add(new JLabel("Categoría:"), gbc);
+                gbc.gridx = 1;
+                JComboBox<Object> catsBox = new JComboBox<>();
+                Tipo selTipo = (Tipo) tiposBox.getSelectedItem();
+                if (selTipo != null) {
+                    java.util.List<Categoria> cats = manager.obtenerCategoriasPorTipoId(selTipo.getId());
+                    if (cats != null && !cats.isEmpty()) for (Categoria c : cats) catsBox.addItem(c);
+                }
+                for (int i=0;i<catsBox.getItemCount();i++) {
+                    Object it = catsBox.getItemAt(i);
+                    if (it != null && it.toString().equalsIgnoreCase(categoriaNombre)) { catsBox.setSelectedIndex(i); break; }
+                }
+                p.add(catsBox, gbc);
+
+                tiposBox.addActionListener(ae -> {
+                    Object tsel = tiposBox.getSelectedItem();
+                    catsBox.removeAllItems();
+                    if (tsel instanceof Tipo) {
+                        java.util.List<Categoria> cs = manager.obtenerCategoriasPorTipoId(((Tipo)tsel).getId());
+                        if (cs != null) for (Categoria c : cs) catsBox.addItem(c);
+                    }
+                });
+
+                gbc.gridx = 0; gbc.gridy = 4;
+                p.add(new JLabel("Descripción:"), gbc);
+                gbc.gridx = 1;
+                JTextArea descFld = new JTextArea(descripcion, 6, 24);
+                descFld.setLineWrap(true);
+                descFld.setWrapStyleWord(true);
+                p.add(new JScrollPane(descFld), gbc);
+
+                gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2;
+                JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+                JButton save = new JButton("Guardar");
+                JButton cancel = new JButton("Cancelar");
+                btns.add(save); btns.add(cancel);
+                p.add(btns, gbc);
+
+                cancel.addActionListener(ev -> dlg.dispose());
+                save.addActionListener(ev -> {
+                    try {
+                        String montoTxt = montoFld.getText().trim();
+                        double monto = Double.parseDouble(montoTxt);
+                        String fechaTxt = fechaFld.getText().trim();
+                        java.time.LocalDate fecha;
+                        if (fechaTxt.isEmpty()) fecha = java.time.LocalDate.now(); else fecha = java.time.LocalDate.parse(fechaTxt, DATE_FORMAT);
+                        Object tipoSel = tiposBox.getSelectedItem();
+                        if (!(tipoSel instanceof Tipo)) throw new IllegalStateException("Seleccione un tipo válido");
+                        int tipoId = ((Tipo) tipoSel).getId();
+                        Object catSel = catsBox.getSelectedItem();
+                        int catId = -1;
+                        if (catSel instanceof Categoria) catId = ((Categoria) catSel).getId(); else if (catSel instanceof String) {
+                            java.util.List<Categoria> posibles = manager.obtenerCategoriasPorTipoId(tipoId);
+                            String name = ((String) catSel).trim();
+                            for (Categoria c : posibles) if (c.getNombre().equalsIgnoreCase(name)) { catId = c.getId(); break; }
+                        }
+                        if (catId == -1) throw new IllegalStateException("Seleccione una categoría válida");
+                        String desc = descFld.getText().trim();
+                        if (desc.isEmpty()) throw new IllegalStateException("La descripción no puede estar vacía.");
+
+                        boolean ok = manager.actualizarMovimiento(id, monto, tipoId, catId, fecha, desc);
+                        if (ok) {
+                            dlg.dispose();
+                            cargarDatos();
+                            JOptionPane.showMessageDialog(MainFrame.this, "Movimiento actualizado.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                        } else {
+                            JOptionPane.showMessageDialog(MainFrame.this, "No se pudo actualizar el movimiento.", "Error", JOptionPane.ERROR_MESSAGE);
+                        }
+                    } catch (NumberFormatException nf) {
+                        JOptionPane.showMessageDialog(MainFrame.this, "Monto inválido.", "Error", JOptionPane.ERROR_MESSAGE);
+                    } catch (DateTimeParseException df) {
+                        JOptionPane.showMessageDialog(MainFrame.this, "Fecha inválida. Use DD-MM-YYYY.", "Error", JOptionPane.ERROR_MESSAGE);
+                    } catch (IllegalStateException ex) {
+                        JOptionPane.showMessageDialog(MainFrame.this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(MainFrame.this, "Error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                });
+
+                dlg.setContentPane(p);
+                dlg.pack();
+                dlg.setLocationRelativeTo(MainFrame.this);
+                dlg.setVisible(true);
+            }
+        });
+
         // Right - formulario
         JPanel rightPanel = new JPanel(new BorderLayout(10, 10));
         rightPanel.setPreferredSize(new Dimension(340, 0));
@@ -244,8 +386,8 @@ public class MainFrame extends JFrame {
         form.add(new JLabel("Fecha:"), gbc);
         gbc.gridx = 1;
         fechaField = new JTextField();
-        final String DATE_PLACEHOLDER = LocalDate.now().toString();
-        fechaField.setToolTipText("Formato: YYYY-MM-DD. Dejar vacío = hoy");
+        final String DATE_PLACEHOLDER = LocalDate.now().format(DATE_FORMAT);
+        fechaField.setToolTipText("Formato: DD-MM-YYYY. Dejar vacío = hoy");
         // placeholder behavior
         fechaField.setText(DATE_PLACEHOLDER);
         fechaField.setForeground(Color.GRAY);
@@ -257,7 +399,7 @@ public class MainFrame extends JFrame {
                 if (fechaField.getText().trim().isEmpty()) { fechaField.setText(DATE_PLACEHOLDER); fechaField.setForeground(Color.GRAY); }
             }
         });
-        // allow only digits and hyphen, max length 10 (YYYY-MM-DD)
+        // allow only digits and hyphen, max length 10 (DD-MM-YYYY)
         ((AbstractDocument) fechaField.getDocument()).setDocumentFilter(new DocumentFilter() {
             private final int MAX = 10;
             @Override
@@ -316,6 +458,8 @@ public class MainFrame extends JFrame {
         addBtn.addActionListener(e -> agregarMovimiento());
         JButton delBtn = new JButton("Eliminar seleccionado");
         delBtn.addActionListener(e -> eliminarSeleccionado());
+        // Deshabilitar eliminación desde la interfaz
+        delBtn.setEnabled(false);
         btns.add(addBtn);
         btns.add(delBtn);
         form.add(btns, gbc);
@@ -365,7 +509,8 @@ public class MainFrame extends JFrame {
         for (Movimiento m : movimientos) {
             String tipoNombre = m.getTipoNombre() != null ? m.getTipoNombre() : "";
             String categoriaNombre = m.getCategoriaNombre() != null ? m.getCategoriaNombre() : "";
-            tableModel.addRow(new Object[]{m.getId(), m.getFecha(), tipoNombre, categoriaNombre, m.getMonto(), m.getDescripcion()});
+            String fechaStr = m.getFecha() != null ? m.getFecha().format(DATE_FORMAT) : "";
+            tableModel.addRow(new Object[]{m.getId(), fechaStr, tipoNombre, categoriaNombre, m.getMonto(), m.getDescripcion()});
         }
         
         // Calcular estadísticas
@@ -399,14 +544,14 @@ public class MainFrame extends JFrame {
             LocalDate fecha;
             String fechaTxt = fechaField.getText().trim();
             // If the placeholder remained (example date), treat as empty
-            if (fechaTxt.equals(LocalDate.now().toString())) fechaTxt = "";
+            if (fechaTxt.equals(LocalDate.now().format(DATE_FORMAT))) fechaTxt = "";
             if (fechaTxt.isEmpty()) {
                 fecha = LocalDate.now();
             } else {
                 try {
-                    fecha = LocalDate.parse(fechaTxt);
+                    fecha = LocalDate.parse(fechaTxt, DATE_FORMAT);
                 } catch (DateTimeParseException ex) {
-                    JOptionPane.showMessageDialog(this, "Formato de fecha inválido. Use YYYY-MM-DD.", "Error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(this, "Formato de fecha inválido. Use DD-MM-YYYY.", "Error", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
                 if (fecha.isAfter(LocalDate.now())) {
@@ -433,7 +578,12 @@ public class MainFrame extends JFrame {
                 if (categoriaId == -1) throw new IllegalStateException("La categoría seleccionada no existe en la base de datos. Seleccione una existente.");
             }
 
+
             String descripcion = descripcionArea.getText().trim();
+            if (descripcion.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "La descripción no puede estar vacía.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
 
             boolean ok = manager.agregarMovimiento(monto, tipoId, categoriaId, descripcion, fecha);
 
@@ -467,6 +617,7 @@ public class MainFrame extends JFrame {
         if (!filtrosInicializados) {
             tipoFilterCombo.addActionListener(e -> actualizarCategoriasFiltroSegunTipo());
             aplicarFiltroBtn.addActionListener(e -> aplicarFiltro());
+            generarReporteBtn.addActionListener(e -> generarReporte());
             limpiarFiltroBtn.addActionListener(e -> {
                 tipoFilterCombo.setSelectedIndex(0);
                 categoriaFilterCombo.removeAllItems();
@@ -476,6 +627,302 @@ public class MainFrame extends JFrame {
             });
             generarGraficoBtn.addActionListener(e -> generarGrafico());
             filtrosInicializados = true;
+        }
+    }
+
+    private void generarReporte() {
+        // Recoger filas actualmente mostradas en la tabla
+        java.util.List<Movimiento> filas = new java.util.ArrayList<>();
+        for (int r = 0; r < tableModel.getRowCount(); r++) {
+            int id = (tableModel.getValueAt(r, 0) instanceof Integer) ? (Integer) tableModel.getValueAt(r, 0) : -1;
+            LocalDate fecha = null;
+            Object fechaObj = tableModel.getValueAt(r, 1);
+            if (fechaObj instanceof LocalDate) fecha = (LocalDate) fechaObj; else {
+                try { fecha = LocalDate.parse(fechaObj.toString(), DATE_FORMAT); } catch (Exception ex) { /* ignore */ }
+            }
+            String tipo = tableModel.getValueAt(r, 2) != null ? tableModel.getValueAt(r, 2).toString() : "";
+            String categoria = tableModel.getValueAt(r, 3) != null ? tableModel.getValueAt(r, 3).toString() : "";
+            double monto = 0.0;
+            Object montoObj = tableModel.getValueAt(r, 4);
+            if (montoObj instanceof Number) monto = ((Number) montoObj).doubleValue(); else { try { monto = Double.parseDouble(montoObj.toString()); } catch (Exception ignored) {} }
+            String descripcion = tableModel.getValueAt(r, 5) != null ? tableModel.getValueAt(r, 5).toString() : "";
+            Movimiento m = new Movimiento();
+            try { m.setId(id); } catch (Exception ignore) {}
+            try { m.setFecha(fecha); } catch (Exception ignore) {}
+            try { m.setTipoNombre(tipo); } catch (Exception ignore) {}
+            try { m.setCategoriaNombre(categoria); } catch (Exception ignore) {}
+            try { m.setMonto(monto); } catch (Exception ignore) {}
+            try { m.setDescripcion(descripcion); } catch (Exception ignore) {}
+            filas.add(m);
+        }
+
+        if (filas.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "No hay datos para generar el reporte.", "Información", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        // Generar PDF en memoria y ofrecer vista previa antes de guardar
+        try {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            try (org.apache.pdfbox.pdmodel.PDDocument doc = new org.apache.pdfbox.pdmodel.PDDocument()) {
+            final float MARGIN = 50f;
+            final float PAGE_WIDTH = org.apache.pdfbox.pdmodel.common.PDRectangle.LETTER.getWidth();
+            final float PAGE_HEIGHT = org.apache.pdfbox.pdmodel.common.PDRectangle.LETTER.getHeight();
+            final float USABLE_WIDTH = PAGE_WIDTH - MARGIN * 2f;
+            final float FONT_SIZE_TITLE = 14f;
+            final float FONT_SIZE_HEADER = 10f;
+            final float FONT_SIZE_CELL = 9f;
+            final org.apache.pdfbox.pdmodel.font.PDFont FONT_BOLD = org.apache.pdfbox.pdmodel.font.PDType1Font.HELVETICA_BOLD;
+            final org.apache.pdfbox.pdmodel.font.PDFont FONT = org.apache.pdfbox.pdmodel.font.PDType1Font.HELVETICA;
+
+            // Column widths (proportional)
+            float colId = 40f;
+            float colFecha = 70f;
+            float colTipo = 80f;
+            float colCategoria = 110f;
+            float colMonto = 70f;
+            float colDescripcion = USABLE_WIDTH - (colId + colFecha + colTipo + colCategoria + colMonto);
+
+            float rowHeight = FONT_SIZE_CELL * 1.4f;
+
+            org.apache.pdfbox.pdmodel.PDPage page = new org.apache.pdfbox.pdmodel.PDPage(org.apache.pdfbox.pdmodel.common.PDRectangle.LETTER);
+            doc.addPage(page);
+            org.apache.pdfbox.pdmodel.PDPageContentStream cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(doc, page);
+
+            float y = PAGE_HEIGHT - MARGIN;
+
+            // draw header (title + column headers)
+            try {
+                // Title
+                cs.beginText();
+                cs.setFont(FONT_BOLD, FONT_SIZE_TITLE);
+                cs.newLineAtOffset(MARGIN, y);
+                cs.showText("Reporte de movimientos");
+                cs.endText();
+
+                // date
+                cs.beginText();
+                cs.setFont(FONT, 9f);
+                cs.newLineAtOffset(PAGE_WIDTH - MARGIN - 150, y);
+                cs.showText("Generado: " + java.time.LocalDate.now().toString());
+                cs.endText();
+
+                // column headers
+                float yhdr = y - 22f;
+                float x = MARGIN;
+                cs.beginText();
+                cs.setFont(FONT_BOLD, FONT_SIZE_HEADER);
+                cs.newLineAtOffset(x, yhdr);
+                cs.showText("ID");
+                cs.endText();
+
+                x += colId;
+                cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Fecha"); cs.endText();
+                x += colFecha;
+                cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Tipo"); cs.endText();
+                x += colTipo;
+                cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Categoría"); cs.endText();
+                x += colCategoria;
+                cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Monto"); cs.endText();
+                x += colMonto;
+                cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Descripción"); cs.endText();
+
+            } catch (Exception ex) { /* ignore */ }
+
+            y -= 40f;
+
+            // helper to split text into lines fitting a width
+            java.util.function.BiFunction<String, Float, java.util.List<String>> wrap = (text, width) -> {
+                java.util.List<String> lines = new java.util.ArrayList<>();
+                if (text == null) return lines;
+                String[] words = text.split("\\s+");
+                StringBuilder cur = new StringBuilder();
+                for (String w : words) {
+                    String trial = cur.length() == 0 ? w : cur + " " + w;
+                    float tw = 0f;
+                    try {
+                        tw = FONT.getStringWidth(trial) / 1000f * FONT_SIZE_CELL;
+                    } catch (java.io.IOException e) {
+                        tw = width + 1; // force wrap if error
+                    }
+                    if (tw > width) {
+                        if (cur.length() > 0) { lines.add(cur.toString()); cur = new StringBuilder(w); }
+                        else { // single long word
+                            lines.add(w); cur = new StringBuilder();
+                        }
+                    } else {
+                        cur = new StringBuilder(trial);
+                    }
+                }
+                if (cur.length() > 0) lines.add(cur.toString());
+                return lines;
+            };
+
+            for (Movimiento m : filas) {
+                java.util.List<String> descLines = wrap.apply(m.getDescripcion(), colDescripcion - 4f);
+                int neededLines = Math.max(1, descLines.size());
+                float neededHeight = neededLines * rowHeight;
+                if (y - neededHeight < MARGIN) {
+                    cs.close();
+                    page = new org.apache.pdfbox.pdmodel.PDPage(org.apache.pdfbox.pdmodel.common.PDRectangle.LETTER);
+                    doc.addPage(page);
+                    cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(doc, page);
+                    y = PAGE_HEIGHT - MARGIN;
+
+                    // draw header (title + column headers)
+                    try {
+                        // Title
+                        cs.beginText();
+                        cs.setFont(FONT_BOLD, FONT_SIZE_TITLE);
+                        cs.newLineAtOffset(MARGIN, y);
+                        cs.showText("Reporte de movimientos");
+                        cs.endText();
+
+                        // date
+                        cs.beginText();
+                        cs.setFont(FONT, 9f);
+                        cs.newLineAtOffset(PAGE_WIDTH - MARGIN - 150, y);
+                        cs.showText("Generado: " + java.time.LocalDate.now().toString());
+                        cs.endText();
+
+                        // column headers
+                        float yhdr = y - 22f;
+                        float x = MARGIN;
+                        cs.beginText();
+                        cs.setFont(FONT_BOLD, FONT_SIZE_HEADER);
+                        cs.newLineAtOffset(x, yhdr);
+                        cs.showText("ID");
+                        cs.endText();
+
+                        x += colId;
+                        cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Fecha"); cs.endText();
+                        x += colFecha;
+                        cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Tipo"); cs.endText();
+                        x += colTipo;
+                        cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Categoría"); cs.endText();
+                        x += colCategoria;
+                        cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Monto"); cs.endText();
+                        x += colMonto;
+                        cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Descripción"); cs.endText();
+
+                    } catch (Exception ex) { /* ignore */ }
+
+                    y -= 40f;
+                }
+
+                float x = MARGIN;
+                try {
+                    // ID
+                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x, y - FONT_SIZE_CELL); cs.showText(m.getId() > 0 ? String.valueOf(m.getId()) : ""); cs.endText();
+                    x += colId;
+                    // Fecha
+                    String fechaStr = m.getFecha() != null ? m.getFecha().format(DATE_FORMAT) : "";
+                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x, y - FONT_SIZE_CELL); cs.showText(fechaStr); cs.endText();
+                    x += colFecha;
+                    // Tipo
+                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x, y - FONT_SIZE_CELL); cs.showText(m.getTipoNombre() != null ? m.getTipoNombre() : ""); cs.endText();
+                    x += colTipo;
+                    // Categoria
+                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x, y - FONT_SIZE_CELL); cs.showText(m.getCategoriaNombre() != null ? m.getCategoriaNombre() : ""); cs.endText();
+                    x += colCategoria;
+                    // Monto (align right)
+                    String montoStr = String.format("$%.2f", m.getMonto());
+                    float montoWidth = FONT.getStringWidth(montoStr) / 1000f * FONT_SIZE_CELL;
+                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x + colMonto - montoWidth - 4f, y - FONT_SIZE_CELL); cs.showText(montoStr); cs.endText();
+                    x += colMonto;
+                    // Descripción (multi-line)
+                    float descY = y - FONT_SIZE_CELL;
+                    for (String ln : descLines) {
+                        cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x, descY); cs.showText(ln); cs.endText();
+                        descY -= rowHeight;
+                    }
+
+                } catch (Exception ex) { /* ignore */ }
+
+                y -= neededHeight;
+                // pequeña separación
+                y -= 4f;
+            }
+
+            cs.close();
+            // Guardar en memoria
+            doc.save(baos);
+            baos.flush();
+            // preparar documento de vista previa
+        }
+
+            byte[] pdfBytes = baos.toByteArray();
+            // cargar para renderizar
+            try (org.apache.pdfbox.pdmodel.PDDocument previewDoc = org.apache.pdfbox.pdmodel.PDDocument.load(new java.io.ByteArrayInputStream(pdfBytes))) {
+                final org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(previewDoc);
+                final int pageCount = previewDoc.getNumberOfPages();
+
+                // UI de previsualización
+                JDialog previewDlg = new JDialog(this, "Vista previa del reporte", true);
+                previewDlg.setSize(900, 700);
+                previewDlg.setLocationRelativeTo(this);
+
+                JPanel viewerPanel = new JPanel(new BorderLayout());
+                JLabel imageLabel = new JLabel();
+                imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                JScrollPane imageScroll = new JScrollPane(imageLabel);
+                viewerPanel.add(imageScroll, BorderLayout.CENTER);
+
+                JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+                JButton prevBtn = new JButton("Anterior");
+                JButton nextBtn = new JButton("Siguiente");
+                JButton saveBtn = new JButton("Guardar");
+                JButton closeBtn = new JButton("Cerrar");
+                controls.add(prevBtn); controls.add(nextBtn); controls.add(saveBtn); controls.add(closeBtn);
+                viewerPanel.add(controls, BorderLayout.SOUTH);
+
+                final int[] currentPage = {0};
+                java.util.function.IntConsumer renderPage = (pIdx) -> {
+                    try {
+                        java.awt.image.BufferedImage bim = renderer.renderImageWithDPI(pIdx, 140);
+                        ImageIcon icon = new ImageIcon(bim);
+                        imageLabel.setIcon(icon);
+                        previewDlg.setTitle(String.format("Vista previa - Página %d/%d", pIdx + 1, pageCount));
+                    } catch (Exception ex) {
+                        imageLabel.setIcon(null);
+                    }
+                };
+
+                prevBtn.addActionListener(ae -> {
+                    if (currentPage[0] > 0) { currentPage[0]--; renderPage.accept(currentPage[0]); }
+                });
+                nextBtn.addActionListener(ae -> {
+                    if (currentPage[0] < pageCount - 1) { currentPage[0]++; renderPage.accept(currentPage[0]); }
+                });
+
+                saveBtn.addActionListener(ae -> {
+                    JFileChooser chooser = new JFileChooser();
+                    chooser.setDialogTitle("Guardar reporte como PDF");
+                    chooser.setSelectedFile(new java.io.File("reporte.pdf"));
+                    int resp = chooser.showSaveDialog(previewDlg);
+                    if (resp != JFileChooser.APPROVE_OPTION) return;
+                    java.io.File destino = chooser.getSelectedFile();
+                    if (!destino.getName().toLowerCase().endsWith(".pdf")) destino = new java.io.File(destino.getParentFile(), destino.getName() + ".pdf");
+                    try (java.io.FileOutputStream fos = new java.io.FileOutputStream(destino)) {
+                        fos.write(pdfBytes);
+                        fos.flush();
+                        JOptionPane.showMessageDialog(previewDlg, "Reporte guardado: " + destino.getAbsolutePath(), "Éxito", JOptionPane.INFORMATION_MESSAGE);
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(previewDlg, "Error al guardar el PDF: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                });
+
+                closeBtn.addActionListener(ae -> previewDlg.dispose());
+
+                previewDlg.setContentPane(viewerPanel);
+                // render first page
+                if (pageCount > 0) renderPage.accept(0);
+                previewDlg.setVisible(true);
+            }
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error al generar la vista previa del PDF: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -510,16 +957,16 @@ public class MainFrame extends JFrame {
 
         // parsear fechas de filtro (si las hay)
         LocalDate desde = null, hasta = null;
-        try {
+            try {
             String txtDesde = fromDateField.getText().trim();
             String txtHasta = toDateField.getText().trim();
             // Treat placeholders as empty
-            if (txtDesde.equals(LocalDate.now().toString())) txtDesde = "";
-            if (txtHasta.equals(LocalDate.now().toString())) txtHasta = "";
-            if (!txtDesde.isEmpty()) desde = LocalDate.parse(txtDesde);
-            if (!txtHasta.isEmpty()) hasta = LocalDate.parse(txtHasta);
+            if (txtDesde.equals(LocalDate.now().format(DATE_FORMAT))) txtDesde = "";
+            if (txtHasta.equals(LocalDate.now().format(DATE_FORMAT))) txtHasta = "";
+            if (!txtDesde.isEmpty()) desde = LocalDate.parse(txtDesde, DATE_FORMAT);
+            if (!txtHasta.isEmpty()) hasta = LocalDate.parse(txtHasta, DATE_FORMAT);
         } catch (DateTimeParseException ex) {
-            JOptionPane.showMessageDialog(this, "Formato de fecha inválido en filtros. Use YYYY-MM-DD.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Formato de fecha inválido en filtros. Use DD-MM-YYYY.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
         if (desde != null && hasta != null && desde.isAfter(hasta)) {
