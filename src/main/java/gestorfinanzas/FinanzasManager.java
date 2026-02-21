@@ -164,4 +164,41 @@ public class FinanzasManager {
     public void cerrarConexion() {
         dbHelper.close();
     }
+
+    public boolean actualizarMovimiento(int id, double monto, int tipoId, int categoriaId, java.time.LocalDate fecha, String descripcion) {
+        validarSesion();
+
+        if (Double.isNaN(monto) || Double.isInfinite(monto)) {
+            throw new IllegalStateException("Monto inválido.");
+        }
+        if (monto <= 0.0) {
+            throw new IllegalStateException("El monto debe ser mayor que cero.");
+        }
+
+        String tipoNombre = dbHelper.obtenerNombreTipoPorId(tipoId);
+        if (tipoNombre == null || tipoNombre.trim().isEmpty()) {
+            throw new IllegalStateException("Tipo inválido. Seleccione un tipo válido.");
+        }
+
+        boolean categoriaValida = false;
+        java.util.List<Categoria> categorias = dbHelper.obtenerCategoriasPorTipoId(tipoId);
+        if (categorias != null) {
+            for (Categoria c : categorias) {
+                if (c.getId() == categoriaId) { categoriaValida = true; break; }
+            }
+        }
+        if (!categoriaValida) {
+            throw new IllegalStateException("Categoría inválida. Seleccione una categoría válida.");
+        }
+
+        if (descripcion == null) descripcion = "";
+        descripcion = descripcion.trim();
+        if (descripcion.isEmpty()) throw new IllegalStateException("La descripción no puede estar vacía.");
+        if (descripcion.length() > 1000) throw new IllegalStateException("La descripción es demasiado larga (máx 1000 caracteres).");
+
+        if (fecha == null) fecha = java.time.LocalDate.now();
+        if (fecha.isAfter(java.time.LocalDate.now())) throw new IllegalStateException("La fecha no puede ser posterior a la fecha actual.");
+
+        return dbHelper.actualizarMovimiento(id, monto, tipoId, categoriaId, fecha, descripcion);
+    }
 }

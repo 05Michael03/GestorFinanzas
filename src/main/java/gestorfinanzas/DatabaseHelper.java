@@ -562,6 +562,70 @@ public class DatabaseHelper {
         }
     }
 
+    public boolean actualizarDescripcionMovimiento(int id, String descripcion) {
+        if (descripcion == null) descripcion = "";
+        String sql = "UPDATE movimientos SET descripcion = ? WHERE id = ? AND usuario_id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, descripcion);
+            pstmt.setInt(2, id);
+            pstmt.setInt(3, usuarioIdActual);
+            int rows = pstmt.executeUpdate();
+            return rows > 0;
+        } catch (SQLException e) {
+            System.err.println("Error al actualizar descripción: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean actualizarMovimiento(int id, double monto, int tipoId, int categoriaId, java.time.LocalDate fecha, String descripcion) {
+        Movimiento previo = obtenerMovimientoPorId(id);
+        if (previo == null) return false;
+        boolean previousAuto = true;
+        try {
+            previousAuto = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+
+            String sql = "UPDATE movimientos SET monto = ?, tipo_id = ?, categoria_id = ?, fecha = ?, descripcion = ? WHERE id = ? AND usuario_id = ?";
+            try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+                pstmt.setDouble(1, monto);
+                pstmt.setInt(2, tipoId);
+                pstmt.setInt(3, categoriaId);
+                pstmt.setString(4, fecha.toString());
+                pstmt.setString(5, descripcion);
+                pstmt.setInt(6, id);
+                pstmt.setInt(7, usuarioIdActual);
+                int rows = pstmt.executeUpdate();
+                if (rows == 0) {
+                    connection.rollback();
+                    return false;
+                }
+            }
+
+            // Revertir efecto previo en saldo
+            String tipoPrev = previo.getTipoNombre();
+            if (tipoPrev != null && tipoPrev.equalsIgnoreCase("ingreso")) {
+                // quitar el ingreso previo
+                actualizarSaldoPorNombre("gasto", previo.getMonto());
+            } else {
+                // quitar el gasto previo (sumar de nuevo)
+                actualizarSaldoPorNombre("ingreso", previo.getMonto());
+            }
+
+            // Aplicar nuevo efecto
+            String nuevoTipo = obtenerNombreTipoPorId(tipoId);
+            actualizarSaldoPorNombre(nuevoTipo, monto);
+
+            connection.commit();
+            return true;
+        } catch (SQLException e) {
+            try { connection.rollback(); } catch (SQLException ex) { /* ignore */ }
+            System.err.println("Error al actualizar movimiento: " + e.getMessage());
+            return false;
+        } finally {
+            try { connection.setAutoCommit(previousAuto); } catch (SQLException ex) { /* ignore */ }
+        }
+    }
+
     public void close() {
         try {
             if (connection != null && !connection.isClosed()) {
