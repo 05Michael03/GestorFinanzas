@@ -14,8 +14,6 @@ import java.util.List;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.awt.event.*;
 
 public class MainFrame extends JFrame {
@@ -76,7 +74,7 @@ public class MainFrame extends JFrame {
     private void initComponents() {
         setTitle("Gestor de Finanzas Personales");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1000, 650);
+        setSize(1280, 720);
         setLocationRelativeTo(null);
 
         this.mainPanel = new JPanel(new BorderLayout(10, 10));
@@ -475,11 +473,22 @@ public class MainFrame extends JFrame {
         rightPanel.add(statsPanel, BorderLayout.CENTER);
 
         // Botón adicional de gráfica en panel derecho (asegura visibilidad)
-        JButton chartBtnRight = new JButton("Generar gráfica");
-        chartBtnRight.addActionListener(e -> generarGrafico());
-        JPanel chartBtnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        chartBtnPanel.add(chartBtnRight);
-        rightPanel.add(chartBtnPanel, BorderLayout.SOUTH);
+        JButton editarBtn = new JButton("Editar Movimiento");
+        editarBtn.addActionListener(e -> {
+            int viewRow = movimientosTable.getSelectedRow();
+            if (viewRow == -1) {
+                JOptionPane.showMessageDialog(MainFrame.this, "Seleccione un movimiento", "Atención", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            
+            java.awt.Rectangle rect = movimientosTable.getCellRect(viewRow, Math.max(0, movimientosTable.getColumnCount() - 1), true);
+            java.awt.Point p = new java.awt.Point(rect.x + rect.width / 2, rect.y + rect.height / 2);
+            MouseEvent me = new MouseEvent(movimientosTable, MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, p.x, p.y, 2, false);
+            movimientosTable.dispatchEvent(me);
+        });
+        JPanel editarBtnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        editarBtnPanel.add(editarBtn);
+        rightPanel.add(editarBtnPanel, BorderLayout.SOUTH);
 
         mainPanel.add(northContainer, BorderLayout.NORTH);
         mainPanel.add(tableScroll, BorderLayout.CENTER);
@@ -634,7 +643,6 @@ public class MainFrame extends JFrame {
         // Recoger filas actualmente mostradas en la tabla
         java.util.List<Movimiento> filas = new java.util.ArrayList<>();
         for (int r = 0; r < tableModel.getRowCount(); r++) {
-            int id = (tableModel.getValueAt(r, 0) instanceof Integer) ? (Integer) tableModel.getValueAt(r, 0) : -1;
             LocalDate fecha = null;
             Object fechaObj = tableModel.getValueAt(r, 1);
             if (fechaObj instanceof LocalDate) fecha = (LocalDate) fechaObj; else {
@@ -647,7 +655,7 @@ public class MainFrame extends JFrame {
             if (montoObj instanceof Number) monto = ((Number) montoObj).doubleValue(); else { try { monto = Double.parseDouble(montoObj.toString()); } catch (Exception ignored) {} }
             String descripcion = tableModel.getValueAt(r, 5) != null ? tableModel.getValueAt(r, 5).toString() : "";
             Movimiento m = new Movimiento();
-            try { m.setId(id); } catch (Exception ignore) {}
+
             try { m.setFecha(fecha); } catch (Exception ignore) {}
             try { m.setTipoNombre(tipo); } catch (Exception ignore) {}
             try { m.setCategoriaNombre(categoria); } catch (Exception ignore) {}
@@ -676,12 +684,11 @@ public class MainFrame extends JFrame {
             final org.apache.pdfbox.pdmodel.font.PDFont FONT = org.apache.pdfbox.pdmodel.font.PDType1Font.HELVETICA;
 
             // Column widths (proportional)
-            float colId = 40f;
             float colFecha = 70f;
             float colTipo = 80f;
             float colCategoria = 110f;
             float colMonto = 70f;
-            float colDescripcion = USABLE_WIDTH - (colId + colFecha + colTipo + colCategoria + colMonto);
+            float colDescripcion = USABLE_WIDTH - (colFecha + colTipo + colCategoria + colMonto);
 
             float rowHeight = FONT_SIZE_CELL * 1.4f;
 
@@ -713,10 +720,8 @@ public class MainFrame extends JFrame {
                 cs.beginText();
                 cs.setFont(FONT_BOLD, FONT_SIZE_HEADER);
                 cs.newLineAtOffset(x, yhdr);
-                cs.showText("ID");
                 cs.endText();
 
-                x += colId;
                 cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Fecha"); cs.endText();
                 x += colFecha;
                 cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Tipo"); cs.endText();
@@ -794,7 +799,6 @@ public class MainFrame extends JFrame {
                         cs.showText("ID");
                         cs.endText();
 
-                        x += colId;
                         cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Fecha"); cs.endText();
                         x += colFecha;
                         cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Tipo"); cs.endText();
@@ -812,9 +816,6 @@ public class MainFrame extends JFrame {
 
                 float x = MARGIN;
                 try {
-                    // ID
-                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x, y - FONT_SIZE_CELL); cs.showText(m.getId() > 0 ? String.valueOf(m.getId()) : ""); cs.endText();
-                    x += colId;
                     // Fecha
                     String fechaStr = m.getFecha() != null ? m.getFecha().format(DATE_FORMAT) : "";
                     cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x, y - FONT_SIZE_CELL); cs.showText(fechaStr); cs.endText();
@@ -827,8 +828,7 @@ public class MainFrame extends JFrame {
                     x += colCategoria;
                     // Monto (align right)
                     String montoStr = String.format("$%.2f", m.getMonto());
-                    float montoWidth = FONT.getStringWidth(montoStr) / 1000f * FONT_SIZE_CELL;
-                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x + colMonto - montoWidth - 4f, y - FONT_SIZE_CELL); cs.showText(montoStr); cs.endText();
+                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x- 4f, y - FONT_SIZE_CELL); cs.showText(montoStr); cs.endText();
                     x += colMonto;
                     // Descripción (multi-line)
                     float descY = y - FONT_SIZE_CELL;
@@ -859,7 +859,7 @@ public class MainFrame extends JFrame {
 
                 // UI de previsualización
                 JDialog previewDlg = new JDialog(this, "Vista previa del reporte", true);
-                previewDlg.setSize(900, 700);
+                previewDlg.setSize(1280, 720);
                 previewDlg.setLocationRelativeTo(this);
 
                 JPanel viewerPanel = new JPanel(new BorderLayout());
