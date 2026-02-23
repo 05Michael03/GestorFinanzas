@@ -14,8 +14,6 @@ import java.util.List;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.time.format.DateTimeFormatter;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.awt.event.*;
 
 public class MainFrame extends JFrame {
@@ -76,7 +74,7 @@ public class MainFrame extends JFrame {
     private void initComponents() {
         setTitle("Gestor de Finanzas Personales");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1000, 650);
+        setSize(1280, 720);
         setLocationRelativeTo(null);
 
         this.mainPanel = new JPanel(new BorderLayout(10, 10));
@@ -250,120 +248,155 @@ public class MainFrame extends JFrame {
                 String montoStr = montoObj != null ? montoObj.toString() : "0";
                 String descripcion = tableModel.getValueAt(modelRow, 5) != null ? tableModel.getValueAt(modelRow, 5).toString() : "";
 
-                JDialog dlg = new JDialog(MainFrame.this, "Editar Movimiento", true);
-                JPanel p = new JPanel(new GridBagLayout());
-                GridBagConstraints gbc = new GridBagConstraints();
-                gbc.insets = new Insets(6,6,6,6);
-                gbc.fill = GridBagConstraints.HORIZONTAL;
+              // Diálogo de edición - Tipo no editable
+JDialog dlg = new JDialog(MainFrame.this, "Editar Movimiento", true);
+JPanel p = new JPanel(new GridBagLayout());
+GridBagConstraints gbc = new GridBagConstraints();
+gbc.insets = new Insets(6,6,6,6);
+gbc.fill = GridBagConstraints.HORIZONTAL;
 
-                gbc.gridx = 0; gbc.gridy = 0;
-                p.add(new JLabel("Monto:"), gbc);
-                gbc.gridx = 1;
-                JTextField montoFld = new JTextField(montoStr);
-                p.add(montoFld, gbc);
+gbc.gridx = 0; gbc.gridy = 0;
+p.add(new JLabel("Monto:"), gbc);
+gbc.gridx = 1;
+JTextField montoFld = new JTextField(montoStr);
+p.add(montoFld, gbc);
 
-                gbc.gridx = 0; gbc.gridy = 1;
-                p.add(new JLabel("Fecha (DD-MM-YYYY):"), gbc);
-                gbc.gridx = 1;
-                JTextField fechaFld = new JTextField(fechaStr);
-                p.add(fechaFld, gbc);
+gbc.gridx = 0; gbc.gridy = 1;
+p.add(new JLabel("Fecha (DD-MM-YYYY):"), gbc);
+gbc.gridx = 1;
+JTextField fechaFld = new JTextField(fechaStr);
+p.add(fechaFld, gbc);
 
-                gbc.gridx = 0; gbc.gridy = 2;
-                p.add(new JLabel("Tipo:"), gbc);
-                gbc.gridx = 1;
-                JComboBox<Tipo> tiposBox = new JComboBox<>();
-                java.util.List<Tipo> tipos = manager.obtenerTipos();
-                if (tipos != null) for (Tipo t : tipos) tiposBox.addItem(t);
-                for (int i=0;i<tiposBox.getItemCount();i++) {
-                    Tipo t = tiposBox.getItemAt(i);
-                    if (t != null && t.toString().equalsIgnoreCase(tipoNombre)) { tiposBox.setSelectedIndex(i); break; }
+// TIPO - NO EDITABLE (mostrar como texto)
+gbc.gridx = 0; gbc.gridy = 2;
+p.add(new JLabel("Tipo:"), gbc);
+gbc.gridx = 1;
+JLabel tipoLabel = new JLabel(tipoNombre);
+tipoLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+tipoLabel.setFont(tipoLabel.getFont().deriveFont(Font.BOLD));
+p.add(tipoLabel, gbc);
+
+// Guardar el tipoId original para usarlo después
+int tipoIdOriginal = -1;
+java.util.List<Tipo> tiposList = manager.obtenerTipos();
+for (Tipo t : tiposList) {
+    if (t.toString().equalsIgnoreCase(tipoNombre)) {
+        tipoIdOriginal = t.getId();
+        break;
+    }
+}
+final int tipoIdFijo = tipoIdOriginal; // Para usar en el ActionListener
+
+// Categoría - EDITABLE
+gbc.gridx = 0; gbc.gridy = 3;
+p.add(new JLabel("Categoría:"), gbc);
+gbc.gridx = 1;
+JComboBox<Object> catsBox = new JComboBox<>();
+
+// Cargar categorías según el tipo fijo
+if (tipoIdFijo != -1) {
+    java.util.List<Categoria> cats = manager.obtenerCategoriasPorTipoId(tipoIdFijo);
+    if (cats != null && !cats.isEmpty()) {
+        for (Categoria c : cats) catsBox.addItem(c);
+    }
+}
+// Seleccionar la categoría actual
+for (int i=0;i<catsBox.getItemCount();i++) {
+    Object it = catsBox.getItemAt(i);
+    if (it != null && it.toString().equalsIgnoreCase(categoriaNombre)) { 
+        catsBox.setSelectedIndex(i); 
+        break;
+    }
+}
+p.add(catsBox, gbc);
+
+gbc.gridx = 0; gbc.gridy = 4;
+p.add(new JLabel("Descripción:"), gbc);
+gbc.gridx = 1;
+JTextArea descFld = new JTextArea(descripcion, 6, 24);
+descFld.setLineWrap(true);
+descFld.setWrapStyleWord(true);
+p.add(new JScrollPane(descFld), gbc);
+
+gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2;
+JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+JButton save = new JButton("Guardar");
+JButton cancel = new JButton("Cancelar");
+btns.add(save); btns.add(cancel);
+p.add(btns, gbc);
+
+cancel.addActionListener(ev -> dlg.dispose());
+save.addActionListener(ev -> {
+    try {
+        String montoTxt = montoFld.getText().trim();
+        double monto = Double.parseDouble(montoTxt);
+        
+        String fechaTxt = fechaFld.getText().trim();
+        java.time.LocalDate fecha;
+        if (fechaTxt.isEmpty()) {
+            fecha = java.time.LocalDate.now();
+        } else {
+            fecha = java.time.LocalDate.parse(fechaTxt, DATE_FORMAT);
+        }
+        
+        // Usar el tipoId fijo (no cambia)
+        if (tipoIdFijo == -1) {
+            throw new IllegalStateException("Error con el tipo de movimiento");
+        }
+        
+        // Obtener categoría seleccionada
+        Object catSel = catsBox.getSelectedItem();
+        int catId = -1;
+        if (catSel instanceof Categoria) {
+            catId = ((Categoria) catSel).getId();
+        } else if (catSel instanceof String) {
+            java.util.List<Categoria> posibles = manager.obtenerCategoriasPorTipoId(tipoIdFijo);
+            String name = ((String) catSel).trim();
+            for (Categoria c : posibles) {
+                if (c.getNombre().equalsIgnoreCase(name)) {
+                    catId = c.getId();
+                    break;
                 }
-                p.add(tiposBox, gbc);
+            }
+        }
+        if (catId == -1) {
+            throw new IllegalStateException("Seleccione una categoría válida");
+        }
+        
+        String desc = descFld.getText().trim();
+        if (desc.isEmpty()) {
+            throw new IllegalStateException("La descripción no puede estar vacía.");
+        }
+        
+        boolean ok = manager.actualizarMovimiento(id, monto, tipoIdFijo, catId, fecha, desc);
+        if (ok) {
+            dlg.dispose();
+            cargarDatos();
+            JOptionPane.showMessageDialog(MainFrame.this, 
+                "Movimiento actualizado.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(MainFrame.this, 
+                "No se pudo actualizar el movimiento.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    } catch (NumberFormatException nf) {
+        JOptionPane.showMessageDialog(MainFrame.this, 
+            "Monto inválido.", "Error", JOptionPane.ERROR_MESSAGE);
+    } catch (DateTimeParseException df) {
+        JOptionPane.showMessageDialog(MainFrame.this, 
+            "Fecha inválida. Use DD-MM-YYYY.", "Error", JOptionPane.ERROR_MESSAGE);
+    } catch (IllegalStateException ex) {
+        JOptionPane.showMessageDialog(MainFrame.this, 
+            ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+    } catch (Exception ex) {
+        JOptionPane.showMessageDialog(MainFrame.this, 
+            "Error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+    }
+});
 
-                gbc.gridx = 0; gbc.gridy = 3;
-                p.add(new JLabel("Categoría:"), gbc);
-                gbc.gridx = 1;
-                JComboBox<Object> catsBox = new JComboBox<>();
-                Tipo selTipo = (Tipo) tiposBox.getSelectedItem();
-                if (selTipo != null) {
-                    java.util.List<Categoria> cats = manager.obtenerCategoriasPorTipoId(selTipo.getId());
-                    if (cats != null && !cats.isEmpty()) for (Categoria c : cats) catsBox.addItem(c);
-                }
-                for (int i=0;i<catsBox.getItemCount();i++) {
-                    Object it = catsBox.getItemAt(i);
-                    if (it != null && it.toString().equalsIgnoreCase(categoriaNombre)) { catsBox.setSelectedIndex(i); break; }
-                }
-                p.add(catsBox, gbc);
-
-                tiposBox.addActionListener(ae -> {
-                    Object tsel = tiposBox.getSelectedItem();
-                    catsBox.removeAllItems();
-                    if (tsel instanceof Tipo) {
-                        java.util.List<Categoria> cs = manager.obtenerCategoriasPorTipoId(((Tipo)tsel).getId());
-                        if (cs != null) for (Categoria c : cs) catsBox.addItem(c);
-                    }
-                });
-
-                gbc.gridx = 0; gbc.gridy = 4;
-                p.add(new JLabel("Descripción:"), gbc);
-                gbc.gridx = 1;
-                JTextArea descFld = new JTextArea(descripcion, 6, 24);
-                descFld.setLineWrap(true);
-                descFld.setWrapStyleWord(true);
-                p.add(new JScrollPane(descFld), gbc);
-
-                gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2;
-                JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-                JButton save = new JButton("Guardar");
-                JButton cancel = new JButton("Cancelar");
-                btns.add(save); btns.add(cancel);
-                p.add(btns, gbc);
-
-                cancel.addActionListener(ev -> dlg.dispose());
-                save.addActionListener(ev -> {
-                    try {
-                        String montoTxt = montoFld.getText().trim();
-                        double monto = Double.parseDouble(montoTxt);
-                        String fechaTxt = fechaFld.getText().trim();
-                        java.time.LocalDate fecha;
-                        if (fechaTxt.isEmpty()) fecha = java.time.LocalDate.now(); else fecha = java.time.LocalDate.parse(fechaTxt, DATE_FORMAT);
-                        Object tipoSel = tiposBox.getSelectedItem();
-                        if (!(tipoSel instanceof Tipo)) throw new IllegalStateException("Seleccione un tipo válido");
-                        int tipoId = ((Tipo) tipoSel).getId();
-                        Object catSel = catsBox.getSelectedItem();
-                        int catId = -1;
-                        if (catSel instanceof Categoria) catId = ((Categoria) catSel).getId(); else if (catSel instanceof String) {
-                            java.util.List<Categoria> posibles = manager.obtenerCategoriasPorTipoId(tipoId);
-                            String name = ((String) catSel).trim();
-                            for (Categoria c : posibles) if (c.getNombre().equalsIgnoreCase(name)) { catId = c.getId(); break; }
-                        }
-                        if (catId == -1) throw new IllegalStateException("Seleccione una categoría válida");
-                        String desc = descFld.getText().trim();
-                        if (desc.isEmpty()) throw new IllegalStateException("La descripción no puede estar vacía.");
-
-                        boolean ok = manager.actualizarMovimiento(id, monto, tipoId, catId, fecha, desc);
-                        if (ok) {
-                            dlg.dispose();
-                            cargarDatos();
-                            JOptionPane.showMessageDialog(MainFrame.this, "Movimiento actualizado.", "Éxito", JOptionPane.INFORMATION_MESSAGE);
-                        } else {
-                            JOptionPane.showMessageDialog(MainFrame.this, "No se pudo actualizar el movimiento.", "Error", JOptionPane.ERROR_MESSAGE);
-                        }
-                    } catch (NumberFormatException nf) {
-                        JOptionPane.showMessageDialog(MainFrame.this, "Monto inválido.", "Error", JOptionPane.ERROR_MESSAGE);
-                    } catch (DateTimeParseException df) {
-                        JOptionPane.showMessageDialog(MainFrame.this, "Fecha inválida. Use DD-MM-YYYY.", "Error", JOptionPane.ERROR_MESSAGE);
-                    } catch (IllegalStateException ex) {
-                        JOptionPane.showMessageDialog(MainFrame.this, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                    } catch (Exception ex) {
-                        JOptionPane.showMessageDialog(MainFrame.this, "Error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                    }
-                });
-
-                dlg.setContentPane(p);
-                dlg.pack();
-                dlg.setLocationRelativeTo(MainFrame.this);
-                dlg.setVisible(true);
+dlg.setContentPane(p);
+dlg.pack();
+dlg.setLocationRelativeTo(MainFrame.this);
+dlg.setVisible(true);
             }
         });
 
@@ -475,11 +508,22 @@ public class MainFrame extends JFrame {
         rightPanel.add(statsPanel, BorderLayout.CENTER);
 
         // Botón adicional de gráfica en panel derecho (asegura visibilidad)
-        JButton chartBtnRight = new JButton("Generar gráfica");
-        chartBtnRight.addActionListener(e -> generarGrafico());
-        JPanel chartBtnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        chartBtnPanel.add(chartBtnRight);
-        rightPanel.add(chartBtnPanel, BorderLayout.SOUTH);
+        JButton editarBtn = new JButton("Editar Movimiento");
+        editarBtn.addActionListener(e -> {
+            int viewRow = movimientosTable.getSelectedRow();
+            if (viewRow == -1) {
+                JOptionPane.showMessageDialog(MainFrame.this, "Seleccione un movimiento", "Atención", JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            
+            java.awt.Rectangle rect = movimientosTable.getCellRect(viewRow, Math.max(0, movimientosTable.getColumnCount() - 1), true);
+            java.awt.Point p = new java.awt.Point(rect.x + rect.width / 2, rect.y + rect.height / 2);
+            MouseEvent me = new MouseEvent(movimientosTable, MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, p.x, p.y, 2, false);
+            movimientosTable.dispatchEvent(me);
+        });
+        JPanel editarBtnPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        editarBtnPanel.add(editarBtn);
+        rightPanel.add(editarBtnPanel, BorderLayout.SOUTH);
 
         mainPanel.add(northContainer, BorderLayout.NORTH);
         mainPanel.add(tableScroll, BorderLayout.CENTER);
@@ -634,7 +678,6 @@ public class MainFrame extends JFrame {
         // Recoger filas actualmente mostradas en la tabla
         java.util.List<Movimiento> filas = new java.util.ArrayList<>();
         for (int r = 0; r < tableModel.getRowCount(); r++) {
-            int id = (tableModel.getValueAt(r, 0) instanceof Integer) ? (Integer) tableModel.getValueAt(r, 0) : -1;
             LocalDate fecha = null;
             Object fechaObj = tableModel.getValueAt(r, 1);
             if (fechaObj instanceof LocalDate) fecha = (LocalDate) fechaObj; else {
@@ -647,7 +690,7 @@ public class MainFrame extends JFrame {
             if (montoObj instanceof Number) monto = ((Number) montoObj).doubleValue(); else { try { monto = Double.parseDouble(montoObj.toString()); } catch (Exception ignored) {} }
             String descripcion = tableModel.getValueAt(r, 5) != null ? tableModel.getValueAt(r, 5).toString() : "";
             Movimiento m = new Movimiento();
-            try { m.setId(id); } catch (Exception ignore) {}
+
             try { m.setFecha(fecha); } catch (Exception ignore) {}
             try { m.setTipoNombre(tipo); } catch (Exception ignore) {}
             try { m.setCategoriaNombre(categoria); } catch (Exception ignore) {}
@@ -676,12 +719,11 @@ public class MainFrame extends JFrame {
             final org.apache.pdfbox.pdmodel.font.PDFont FONT = org.apache.pdfbox.pdmodel.font.PDType1Font.HELVETICA;
 
             // Column widths (proportional)
-            float colId = 40f;
             float colFecha = 70f;
             float colTipo = 80f;
             float colCategoria = 110f;
             float colMonto = 70f;
-            float colDescripcion = USABLE_WIDTH - (colId + colFecha + colTipo + colCategoria + colMonto);
+            float colDescripcion = USABLE_WIDTH - (colFecha + colTipo + colCategoria + colMonto);
 
             float rowHeight = FONT_SIZE_CELL * 1.4f;
 
@@ -691,7 +733,7 @@ public class MainFrame extends JFrame {
 
             float y = PAGE_HEIGHT - MARGIN;
 
-            // draw header (title + column headers)
+            // draw header (title + user info + column headers)
             try {
                 // Title
                 cs.beginText();
@@ -700,6 +742,22 @@ public class MainFrame extends JFrame {
                 cs.showText("Reporte de movimientos");
                 cs.endText();
 
+                // user info (nombre, apellido, cédula)
+                Usuario usuario = manager.getUsuarioActual();
+                String userInfo = "";
+                if (usuario != null) {
+                    String ap = usuario.getApellido() != null ? usuario.getApellido() : "";
+                    String cd = usuario.getCedula() != null ? usuario.getCedula() : "";
+                    userInfo = usuario.getNombre() + (ap.isEmpty() ? "" : " " + ap) + (cd.isEmpty() ? "" : " - Cédula: " + cd);
+                }
+                if (!userInfo.isEmpty()) {
+                    cs.beginText();
+                    cs.setFont(FONT, 9f);
+                    cs.newLineAtOffset(MARGIN, y - 16f);
+                    cs.showText(userInfo);
+                    cs.endText();
+                }
+
                 // date
                 cs.beginText();
                 cs.setFont(FONT, 9f);
@@ -707,16 +765,14 @@ public class MainFrame extends JFrame {
                 cs.showText("Generado: " + java.time.LocalDate.now().toString());
                 cs.endText();
 
-                // column headers
-                float yhdr = y - 22f;
+                // column headers (moved a bit down to fit user info)
+                float yhdr = y - 34f;
                 float x = MARGIN;
                 cs.beginText();
                 cs.setFont(FONT_BOLD, FONT_SIZE_HEADER);
                 cs.newLineAtOffset(x, yhdr);
-                cs.showText("ID");
                 cs.endText();
 
-                x += colId;
                 cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Fecha"); cs.endText();
                 x += colFecha;
                 cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Tipo"); cs.endText();
@@ -794,7 +850,6 @@ public class MainFrame extends JFrame {
                         cs.showText("ID");
                         cs.endText();
 
-                        x += colId;
                         cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Fecha"); cs.endText();
                         x += colFecha;
                         cs.beginText(); cs.setFont(FONT_BOLD, FONT_SIZE_HEADER); cs.newLineAtOffset(x, yhdr); cs.showText("Tipo"); cs.endText();
@@ -812,9 +867,6 @@ public class MainFrame extends JFrame {
 
                 float x = MARGIN;
                 try {
-                    // ID
-                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x, y - FONT_SIZE_CELL); cs.showText(m.getId() > 0 ? String.valueOf(m.getId()) : ""); cs.endText();
-                    x += colId;
                     // Fecha
                     String fechaStr = m.getFecha() != null ? m.getFecha().format(DATE_FORMAT) : "";
                     cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x, y - FONT_SIZE_CELL); cs.showText(fechaStr); cs.endText();
@@ -827,8 +879,7 @@ public class MainFrame extends JFrame {
                     x += colCategoria;
                     // Monto (align right)
                     String montoStr = String.format("$%.2f", m.getMonto());
-                    float montoWidth = FONT.getStringWidth(montoStr) / 1000f * FONT_SIZE_CELL;
-                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x + colMonto - montoWidth - 4f, y - FONT_SIZE_CELL); cs.showText(montoStr); cs.endText();
+                    cs.beginText(); cs.setFont(FONT, FONT_SIZE_CELL); cs.newLineAtOffset(x- 4f, y - FONT_SIZE_CELL); cs.showText(montoStr); cs.endText();
                     x += colMonto;
                     // Descripción (multi-line)
                     float descY = y - FONT_SIZE_CELL;
@@ -859,7 +910,7 @@ public class MainFrame extends JFrame {
 
                 // UI de previsualización
                 JDialog previewDlg = new JDialog(this, "Vista previa del reporte", true);
-                previewDlg.setSize(900, 700);
+                previewDlg.setSize(1280, 720);
                 previewDlg.setLocationRelativeTo(this);
 
                 JPanel viewerPanel = new JPanel(new BorderLayout());
